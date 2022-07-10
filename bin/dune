@@ -1,0 +1,4 @@
+(executable
+ (public_name bite)
+ (name main)
+ (libraries bite))
