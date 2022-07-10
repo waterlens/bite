@@ -1,2 +1,8 @@
+(menhir
+ (modules parser))
+
+(ocamllex lexer)
+
 (library
- (name bite))
+ (name bite)
+ (modules parser lexer))

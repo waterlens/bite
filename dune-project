@@ -15,6 +15,8 @@
 
 (documentation https://github.com/waterlens/bite)
 
+(using menhir 2.1)
+
 (package
  (name bite)
  (synopsis "A language for experimental purpose")
