@@ -1,44 +1,113 @@
-/* Literals and Identifier */
-%token <int>    TK_INT_LITERAL
-%token <float>  TK_FLOAT_LITERAL
-%token <string> TK_STR_LITERAL
-%token <bool>   TK_BOOL_LITERAL
-%token <string> TK_ID
-
-/* Keywords */
-%token TK_IF
-%token TK_ELSE
-%token TK_WHILE
-%token TK_FOR
-%token TK_LET
-%token TK_VAR
-%token TK_RESUME
-%token TK_WITH
-%token TK_VOID
-%token TK_INT
-%token TK_FLOAT
-%token TK_BOOL
-%token TK_CLASS
-%token TK_INTERFACE
-%token TK_FUNCTION
-%token TK_TRY
-%token TK_RAISE
-
-/* Symbols */
-%token TK_COLON
-%token TK_L_PAREN
-%token TK_R_PAREN
-%token TK_L_BRACE
-%token TK_R_BRACE
-%token TK_L_BRACKET
-%token TK_R_BRACKET
-
-%token TK_EOF
+%left "||"
+%left "&&"
+%left "==" "!="
+%left "<" "<=" ">" ">="
+%left "+" "-"
+%left "*" "/" "%"
+%nonassoc UNARY
+%left "."
 
 %start entry
 %type <unit> entry
 
 %%
 entry:
-    TK_EOF          {}
-;
+| definition* TK_EOF
+    {}
+
+definition:
+| fn_definition
+    {}
+| class_definition  
+    {}
+| interface_definition
+    {}
+
+fn_definition:
+| fn_signature fn_body {}
+
+class_definition:
+| class_signature class_body {}
+
+interface_definition:
+| interface_signature interface_body {}
+
+fn_signature:
+| "fn" "<id>" generic_signature? "(" ")" type_specialization? {}
+
+class_signature:
+| "class" "<id>" generic_signature? type_specialization? {}
+
+interface_signature:
+| "interface" "<id>" generic_signature? {}
+
+fn_body:
+| "{" "}" {}
+
+class_body:
+| "{" "}" {}
+
+interface_body:
+| "{" "}" {}
+
+type_specialization:
+| ":" type_signature {}
+
+generic_signature:
+| "<" separated_list(",", quoted_type) ">" {}
+
+type_signature:
+| composite_type {}
+
+primitive_type:
+| "unit"    {}
+| "int"     {}
+| "float"   {}
+| "bool"    {}
+| "str"     {}
+
+quoted_type:
+| "'" "<id>"        {}
+
+atomic_type:
+| primitive_type    {}
+| quoted_type       {}
+| "<id>"            {}
+
+instantiated_type:
+| atomic_type quoted_type* {}
+
+product_type:
+| separated_nonempty_list("*", instantiated_type)  {}
+
+sum_type:
+| separated_nonempty_list("|", product_type) {}
+
+composite_type:
+| separated_nonempty_list("->", sum_type) option("~") {}
+
+expr:
+| expr binary_op expr {}
+| unary_op expr %prec UNARY {}
+
+%inline unary_op:
+| "!"   {}
+| "+"   {}
+| "-"   {}
+
+
+%inline binary_op:
+| "+"   {}
+| "-"   {}
+| "*"   {}
+| "/"   {}
+| "%"   {}
+| "=="  {}
+| "!="  {}
+| ">"   {}
+| ">="  {}
+| "<"   {}
+| "<="  {}
+| "&&"  {}
+| "||"  {}
+| "."   {}

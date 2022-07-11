@@ -1,8 +1,16 @@
 (menhir
- (modules parser))
+  (modules tokens)
+  (flags --only-tokens)
+)
+
+(menhir
+  (modules tokens parser)
+  (merge_into parser)
+  (flags --external-tokens Tokens)
+)
 
 (ocamllex lexer)
 
 (library
  (name bite)
- (modules parser lexer))
+ (modules parser lexer tokens))
