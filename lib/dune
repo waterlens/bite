@@ -6,7 +6,7 @@
 (menhir
   (modules tokens parser)
   (merge_into parser)
-  (flags --external-tokens Tokens)
+  (flags --external-tokens Tokens --dump --explain)
 )
 
 (ocamllex lexer)

@@ -4,6 +4,7 @@
 %token <string> TK_STR_LITERAL      "<string>"
 %token <bool>   TK_BOOL_LITERAL     "<bool>"
 %token <string> TK_ID               "<id>"
+%token <string> TK_SHEBANG          "<shebang>"
 
 /* Keywords */
 %token TK_IF            "if"
@@ -26,6 +27,7 @@
 %token TK_TYPE          "type"
 %token TK_TRY           "try"
 %token TK_RAISE         "raise"
+%token TK_RETURN        "return"
 
 /* Symbols */
 %token TK_DOT           "."
@@ -33,6 +35,7 @@
 %token TK_COLON         ":"
 %token TK_SEMICOLON     ";"
 %token TK_CARET         "^"
+%token TK_UNDERSCORE    "_"
 %token TK_HASH          "#"
 %token TK_L_PAREN       "("
 %token TK_R_PAREN       ")"
@@ -61,6 +64,7 @@
 %token TK_OR            "|"
 %token TK_SQUOTE        "'"
 %token TK_TILDE         "~"
+%token TK_DCOLON        "::"
 
 %token TK_EOF
 

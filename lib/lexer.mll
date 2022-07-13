@@ -35,6 +35,7 @@ let keywords_table = Hashtbl.of_seq @@ List.to_seq
     ; ("try"        , TK_TRY)
     ; ("raise"      , TK_RAISE)
     ; ("type"       , TK_TYPE)
+    ; ("return"     , TK_RETURN)
     ]
 
 let sops_table = Hashtbl.of_seq @@ List.to_seq
@@ -43,6 +44,7 @@ let sops_table = Hashtbl.of_seq @@ List.to_seq
     ; (':'  , TK_COLON)
     ; (';'  , TK_SEMICOLON)
     ; ('^'  , TK_CARET)
+    ; ('_'  , TK_UNDERSCORE)
     ; ('#'  , TK_HASH)
     ; ('('  , TK_L_PAREN)
     ; (')'  , TK_R_PAREN)
@@ -73,6 +75,7 @@ let mops_table = Hashtbl.of_seq @@ List.to_seq
     ; ("<="   , TK_LE)
     ; ("&&"   , TK_LAND)
     ; ("||"   , TK_LOR)
+    ; ("::"   , TK_DCOLON)
     ]
 }
 
@@ -87,17 +90,19 @@ let int_lit       = ddigit+
 let float_lit     = ddigit+? '.' ddigit+
 let escaped       = ['\\' '\'' '\"' 'n' 't' 'r' ' ']
 let bool_lit      = "true" | "false"
-let sops          = ['.' ',' ':' ';' '^' '#' '(' ')' '{' '}' '[' ']' '+' '-' '*' '/' '%' '=' '>' '<' '!' '|' '\'']
-let mops          = "<-" | "->" | "=>" | "==" | "!=" | ">=" | "<=" | "&&" | "||" 
+let sops          = ['.' ',' ':' ';' '^' '_' '#' '(' ')' '{' '}' '[' ']' '+' '-' '*' '/' '%' '=' '>' '<' '!' '|' '\'']
+let mops          = "<-" | "->" | "=>" | "==" | "!=" | ">=" | "<=" | "&&" | "||" | "::"
+let shebang       = "#!" _* newline
 
 rule tokenize = parse
   | eof             { TK_EOF }
   | whitespace      { tokenize lexbuf }
   | newline         { new_line lexbuf; tokenize lexbuf }
   | "//"            { comment lexbuf }
+  | shebang   as x  { TK_SHEBANG (x) }
   | float_lit as x  { TK_FLOAT_LITERAL (float_of_string x) }
-  | int_lit as x    { TK_INT_LITERAL (int_of_string x) }
-  | bool_lit as x   { TK_BOOL_LITERAL (bool_of_string x) } 
+  | int_lit   as x  { TK_INT_LITERAL (int_of_string x) }
+  | bool_lit  as x  { TK_BOOL_LITERAL (bool_of_string x) } 
   | "\""            { 
                       let buf = Buffer.create 64 in
                         string buf lexbuf;
