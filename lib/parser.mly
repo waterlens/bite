@@ -1,3 +1,4 @@
+%nonassoc "="
 %left "||"
 %left "&&"
 %left "==" "!="
@@ -6,7 +7,7 @@
 %left "*" "/" "%"
 %nonassoc prec_unary
 %left "."
-%nonassoc "("
+%nonassoc "(" "["
 
 %start entry
 %type <unit> entry
@@ -34,14 +35,17 @@ interface_definition:
 | interface_signature interface_body {}
 
 fn_signature:
-| "fn" identifier generic_signature? parameter_list type_annotation? {}
+| "fn" identifier generic_signature? parameter_list(parameter_signature) type_annotation? {}
 
-parameter_list:
-| "(" separated_list(",", parameter_declaration) ")" {}
+parameter_list(param):
+| "(" separated_list(",", param) ")" {}
+
+parameter_signature:
+| identifier ":" composite_type   {}
+| composite_type {}
 
 parameter_declaration:
-| composite_type                    {}
-| identifier ":" composite_type     {}
+| identifier preceded(":", composite_type)?     {}
 
 class_signature:
 | "class" identifier generic_signature? type_annotation? {}
@@ -76,7 +80,10 @@ atomic_type:
 | hole                      {}
 
 instantiated_type:
-| atomic_type quoted_type* {}
+| atomic_type type_arguments? {}
+
+type_arguments:
+| "<" separated_list(",", sum_type) ">" {}
 
 product_type:
 | separated_nonempty_list("*", instantiated_type)  {}
@@ -119,9 +126,13 @@ ctl_stmt:
 | "if" expr block else_clause?  {}
 | "while" expr block            {}
 | "try" block with_clause*      {}
+| "return" expr ";"             {}
 
 with_clause:
-| "with" fn_signature block     {}
+| "with" handler_signature block {}
+
+handler_signature:
+| identifier parameter_list(parameter_declaration) type_annotation? {}
 
 else_clause:
 | "else" block {}
@@ -148,6 +159,7 @@ expr:
 | call_expr                                 {}
 | field_expr                                {}
 | path_expr                                 {}
+| index_expr                                {}
 
 array_expr:
 | "[" separated_nonempty_list(",", expr) "]" {}
@@ -158,7 +170,10 @@ field_expr:
 path_expr:
 | identifier generic_arguments?             {}
 
-%inline call_expr: 
+index_expr:
+| expr "[" expr "]"                         {}
+
+call_expr: 
 | expr "(" separated_list(",", expr) ")"    {}
 
 generic_arguments:
@@ -170,6 +185,7 @@ generic_arguments:
 | "-"   {}
 
 %inline binary_op:
+| "="   {}
 | "+"   {}
 | "-"   {}
 | "*"   {}

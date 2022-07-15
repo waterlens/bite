@@ -7,7 +7,7 @@ type error =
   | UnexpectedEof of string 
   | InvalidStringLiteral
 
-exception SyntaxError of error * position
+exception Error of error * position
 
 let convert_escaped c =
   match c with
@@ -36,6 +36,7 @@ let keywords_table = Hashtbl.of_seq @@ List.to_seq
     ; ("raise"      , TK_RAISE)
     ; ("type"       , TK_TYPE)
     ; ("return"     , TK_RETURN)
+    ; ("with"       , TK_WITH)
     ]
 
 let sops_table = Hashtbl.of_seq @@ List.to_seq
@@ -63,6 +64,7 @@ let sops_table = Hashtbl.of_seq @@ List.to_seq
     ; ('!'  , TK_LNOT)
     ; ('|'  , TK_OR)
     ; ('\'' , TK_SQUOTE)
+    ; ('~'  , TK_TILDE)
     ]
 
 let mops_table = Hashtbl.of_seq @@ List.to_seq
@@ -79,27 +81,27 @@ let mops_table = Hashtbl.of_seq @@ List.to_seq
     ]
 }
 
-let newline       = '\r'?'\n'
+let newline       = "\n"
 let whitespace    = ['\t' ' ']+
 let ddigit        = ['0'-'9']
 let hdigit        = ['0'-'9' 'a'-'f' 'A'-'F']
-let alpha         = ['a'-'z' 'A'-'F']
+let alpha         = ['a'-'z' 'A'-'Z']
 let alphanum      = alpha | ddigit
 let identfier     = (alpha | '_') (alphanum | '_') *  
 let int_lit       = ddigit+
 let float_lit     = ddigit+? '.' ddigit+
 let escaped       = ['\\' '\'' '\"' 'n' 't' 'r' ' ']
 let bool_lit      = "true" | "false"
-let sops          = ['.' ',' ':' ';' '^' '_' '#' '(' ')' '{' '}' '[' ']' '+' '-' '*' '/' '%' '=' '>' '<' '!' '|' '\'']
+let sops          = ['.' ',' ':' ';' '^' '_' '#' '(' ')' '{' '}' '[' ']' '+' '-' '*' '/' '%' '=' '>' '<' '!' '|' '\'' '~']
 let mops          = "<-" | "->" | "=>" | "==" | "!=" | ">=" | "<=" | "&&" | "||" | "::"
-let shebang       = "#!" _* newline
+let shebang       = "#!" [^ '\r' '\n']* newline
 
 rule tokenize = parse
   | eof             { TK_EOF }
   | whitespace      { tokenize lexbuf }
   | newline         { new_line lexbuf; tokenize lexbuf }
   | "//"            { comment lexbuf }
-  | shebang   as x  { TK_SHEBANG (x) }
+  | shebang   as x  { new_line lexbuf; TK_SHEBANG x }
   | float_lit as x  { TK_FLOAT_LITERAL (float_of_string x) }
   | int_lit   as x  { TK_INT_LITERAL (int_of_string x) }
   | bool_lit  as x  { TK_BOOL_LITERAL (bool_of_string x) } 
@@ -116,7 +118,7 @@ rule tokenize = parse
    (* if Option.get raises an exn, it's must be a internal error *)
   | mops as op      { Option.get @@ Hashtbl.find_opt mops_table op}
   | sops as op      { Option.get @@ Hashtbl.find_opt sops_table op }
-  | _               { raise @@ SyntaxError (UnexpectedToken "unexpected token", lexeme_start_p lexbuf) }
+  | _               { raise @@ Error (UnexpectedToken "unexpected token", lexeme_start_p lexbuf) }
 
 and comment = parse
   | newline     { new_line lexbuf; tokenize lexbuf }
@@ -125,6 +127,6 @@ and comment = parse
 and string buffer = parse
   | '\"'                { () }
   | '\\' (escaped as c) { Buffer.add_char buffer (convert_escaped c) ; string buffer lexbuf }
-  | '\\' _ | newline    { raise @@ SyntaxError (InvalidStringLiteral, lexeme_start_p lexbuf) }
+  | '\\' _ | newline    { raise @@ Error (InvalidStringLiteral, lexeme_start_p lexbuf) }
   | _ as c              { Buffer.add_char buffer c; string buffer lexbuf }
-  | eof                 { raise @@ SyntaxError (UnexpectedEof "string literal doesn't terminate", lexeme_start_p lexbuf)}
+  | eof                 { raise @@ Error (UnexpectedEof "string literal doesn't terminate", lexeme_start_p lexbuf)}

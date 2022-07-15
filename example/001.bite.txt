@@ -1,0 +1,48 @@
+#!/usr/bin/env bite
+// This is a comment
+
+fn min<'a>(v1: 'a, b: 'a) {
+  if a > b {
+    return b;
+  } else {
+    return a;
+  }
+}
+
+interface Yield<'a> {
+  fn yield('a) : unit ~ Replace<'a> | Behead
+}
+
+interface Replace<'a> {
+  fn replace('a) : unit
+}
+
+interface Behead {
+  fn behead() : unit
+}
+
+class Node<'a> {
+  var head: 'a
+  var tail: Node<'a>
+
+  fn iter(): unit ~ Yield<'a> | Behead {
+    try { 
+      yield(head);
+    }
+    with yield(x) {
+      resume {
+        if x < 0 { behead(); } else { replace(x * 2); }
+      }
+    }
+    with behead() {
+      resume {
+        node = node.tail;
+      }
+    }
+  }
+}
+
+fn array() {
+  var arr = [1, 2, 3, 4, 5];
+  arr[1] = 0;
+}
