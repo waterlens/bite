@@ -21,6 +21,7 @@ let keywords_table = Hashtbl.of_seq @@ List.to_seq
     ; ("else"       , TK_ELSE)
     ; ("while"      , TK_WHILE)
     ; ("for"        , TK_FOR)
+    ; ("match"      , TK_MATCH)
     ; ("let"        , TK_LET)
     ; ("var"        , TK_VAR)
     ; ("resume"     , TK_RESUME)
@@ -29,14 +30,20 @@ let keywords_table = Hashtbl.of_seq @@ List.to_seq
     ; ("float"      , TK_FLOAT)
     ; ("bool"       , TK_BOOL)
     ; ("str"        , TK_STR)
+    ; ("record"     , TK_RECORD)
+    ; ("enum"       , TK_ENUM)
+    ; ("synonym"    , TK_SYNONYM)
     ; ("class"      , TK_CLASS)
     ; ("interface"  , TK_INTERFACE)
     ; ("fn"         , TK_FUNCTION)
+    ; ("effect"     , TK_EFFECT)
     ; ("try"        , TK_TRY)
     ; ("raise"      , TK_RAISE)
     ; ("type"       , TK_TYPE)
     ; ("return"     , TK_RETURN)
     ; ("with"       , TK_WITH)
+    ; ("use"        , TK_USE)
+    ; ("mod"        , TK_MODULE)
     ]
 
 let sops_table = Hashtbl.of_seq @@ List.to_seq
@@ -78,6 +85,7 @@ let mops_table = Hashtbl.of_seq @@ List.to_seq
     ; ("&&"   , TK_LAND)
     ; ("||"   , TK_LOR)
     ; ("::"   , TK_DCOLON)
+    ; (":["   , TK_COLONBRACKET)
     ]
 }
 
@@ -93,7 +101,7 @@ let float_lit     = ddigit+? '.' ddigit+
 let escaped       = ['\\' '\'' '\"' 'n' 't' 'r' ' ']
 let bool_lit      = "true" | "false"
 let sops          = ['.' ',' ':' ';' '^' '_' '#' '(' ')' '{' '}' '[' ']' '+' '-' '*' '/' '%' '=' '>' '<' '!' '|' '\'' '~']
-let mops          = "<-" | "->" | "=>" | "==" | "!=" | ">=" | "<=" | "&&" | "||" | "::"
+let mops          = "<-" | "->" | "=>" | "==" | "!=" | ">=" | "<=" | "&&" | "||" | "::" | ":["
 let shebang       = "#!" [^ '\r' '\n']* newline
 
 rule tokenize = parse
@@ -104,7 +112,7 @@ rule tokenize = parse
   | shebang   as x  { new_line lexbuf; TK_SHEBANG x }
   | float_lit as x  { TK_FLOAT_LITERAL (float_of_string x) }
   | int_lit   as x  { TK_INT_LITERAL (int_of_string x) }
-  | bool_lit  as x  { TK_BOOL_LITERAL (bool_of_string x) } 
+  | bool_lit  as x  { TK_BOOL_LITERAL (bool_of_string x) }
   | "\""            { 
                       let buf = Buffer.create 64 in
                         string buf lexbuf;
@@ -114,6 +122,10 @@ rule tokenize = parse
                       match Hashtbl.find_opt keywords_table x with
                       | Some token -> token
                       | None       -> TK_ID x
+                    }
+  | '\'' (identfier as x)
+                    {
+                      TK_QID x
                     }
    (* if Option.get raises an exn, it's must be a internal error *)
   | mops as op      { Option.get @@ Hashtbl.find_opt mops_table op}

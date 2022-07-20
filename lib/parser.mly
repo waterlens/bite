@@ -17,98 +17,82 @@ entry:
 | "<shebang>"? item* TK_EOF
     {}
 
-%inline item:
+item:
+| mod_definition
+    {}
+| use_directive
+    {}
 | fn_definition
     {}
-| class_definition
+| type_definition
     {}
-| interface_definition
+| effect_definition
     {}
 
+// Syntax elements of modules
+mod_definition:
+| "mod" "<id>"? block(item) {}
+
+// Synatx elements of use directive
+use_directive:
+| "use" path {}
+
+// Synatx elements of function definiton
 fn_definition:
-| fn_signature fn_body {}
-
-class_definition:
-| class_signature class_body {}
-
-interface_definition:
-| interface_signature interface_body {}
+| fn_signature block(stmt) {}
 
 fn_signature:
-| "fn" identifier generic_signature? parameter_list(parameter_signature) type_annotation? {}
+| "fn" identifier generic_signature?
+  delimited_split_list("(", parameter_signature, ")")
+  type_annotation? {}
 
-parameter_list(param):
-| "(" separated_list(",", param) ")" {}
+%inline generic_signature:
+| delimited_split_list("[", type_constraint, "]") {}
 
 parameter_signature:
 | identifier ":" composite_type   {}
 | composite_type {}
 
+type_annotation:
+| ":" composite_type                 {}
+
 parameter_declaration:
 | identifier preceded(":", composite_type)?     {}
 
-class_signature:
-| "class" identifier generic_signature? type_annotation? {}
+// Syntax elements of type definition (specifically record type, enum type and synonym)
+type_definition:
+| enum_type_definition {}
+| record_type_definition {}
+| synonym_type_definition {}
 
-interface_signature:
-| "interface" identifier generic_signature? {}
+enum_type_definition:
+| "enum" identifier generic_signature? block(constructor) {}
 
-type_annotation:
-| ":" type_signature {}
+constructor:
+| identifier delimited_split_list("(", parameter_signature, ")")? {}
 
-generic_signature:
-| "<" separated_list(",", quoted_type) ">" {}
+record_type_definition:
+| "record" identifier generic_signature? block(field) {}
 
-type_signature:
-| composite_type {}
+field:
+| identifier type_annotation {}
 
-primitive_type:
-| "unit"    {}
-| "int"     {}
-| "float"   {}
-| "bool"    {}
-| "str"     {}
+synonym_type_definition:
+| "synonym" identifier generic_signature? "=" composite_type {}
 
-quoted_type:
-| "'" identifier    {}
+// Syntax elements of effect definition
+effect_definition:
+| "effect" identifier generic_signature? block(effect_raiser_signature) {}
 
-atomic_type:
-| primitive_type            {}
-| quoted_type               {}
-| identifier                {}
-| "(" composite_type ")"    {}
-| hole                      {}
+effect_raiser_signature:
+| identifier generic_signature?
+  delimited_split_list("(", parameter_signature, ")")
+  type_annotation? {}
 
-instantiated_type:
-| atomic_type type_arguments? {}
-
-type_arguments:
-| "<" separated_list(",", sum_type) ">" {}
-
-product_type:
-| separated_nonempty_list("*", instantiated_type)  {}
-
-sum_type:
-| separated_nonempty_list("|", product_type) {}
-
-raised_type:
-| "~" sum_type {}
-
-composite_type:
-| separated_nonempty_list("->", sum_type) raised_type? {}
-
-fn_body:
-| block {}
-
-class_body:
-| "{" member* "}" {}
-
-interface_body:
-| "{" interface_member* "}" {}
-
+// Syntax elements of expressions and statements
 stmt:
 | ";"           {}
-| item          {}
+| item ";"      {}
 | decl_stmt     {}
 | expr_stmt     {}
 | ctl_stmt      {}
@@ -119,36 +103,29 @@ decl_stmt:
 
 expr_stmt:
 | expr ";"             {}
-| block                {}
+| block(stmt)          {}
 
 ctl_stmt:
-| "resume" expr_stmt            {}
-| "if" expr block else_clause?  {}
-| "while" expr block            {}
-| "try" block with_clause*      {}
-| "return" expr ";"             {}
+| "resume" expr_stmt                    {}
+| "if" "(" expr ")" block(stmt) else_clause?    {}
+| "while" "(" expr ")" block(stmt)              {}
+| "try" block(stmt) with_clause*        {}
+| "return" expr ";"                     {}
 
 with_clause:
-| "with" handler_signature block {}
+| "with" effect_handler_definition {}
 
-handler_signature:
-| identifier parameter_list(parameter_declaration) type_annotation? {}
+effect_handler_definition:
+| identifier type_annotation?
+  block(effect_handler_signature) {}
+
+effect_handler_signature:
+| identifier generic_signature?
+  delimited_split_list("(", parameter_declaration, ")")
+  type_annotation? block(stmt) {}
 
 else_clause:
-| "else" block {}
-
-block:
-| "{" stmt* "}"   {}   
-
-member:
-| var_definition    {}
-| fn_definition     {}
-
-interface_member:
-| fn_signature      {}
-
-var_definition:
-| "var" identifier type_annotation {}
+| "else" block(stmt) {}
 
 expr:
 | "(" expr ")"                              {}
@@ -160,24 +137,42 @@ expr:
 | field_expr                                {}
 | path_expr                                 {}
 | index_expr                                {}
+| record_expr                               {}
+| tuple_expr                                {}
 
 array_expr:
 | "[" separated_nonempty_list(",", expr) "]" {}
 
 field_expr:
 | expr "." identifier                       {}
+| expr "." "<int>"                          {}
 
 path_expr:
-| identifier generic_arguments?             {}
+| separated_nonempty_list("::", pair(identifier, generic_arguments?))
+  {}
 
 index_expr:
-| expr "[" expr "]"                         {}
+| expr "[" expr "]"                                 {}
 
 call_expr: 
-| expr "(" separated_list(",", expr) ")"    {}
+| expr delimited_split_list("(", expr, ")")         {}
 
 generic_arguments:
-| "::" "<" separated_list(",", composite_type) ">" {}
+| delimited_split_list(":[", composite_type, "]")   {}
+
+record_expr:
+| identifier generic_arguments? block(terminated(field_initializer, ","?))
+  {}
+
+field_initializer:
+| "." identifier preceded("=", expr)?               {}
+
+%inline tuple_expr:
+| "(" ")"                                           {}
+| "(" expr "," ")"                                  {}
+| "(" expr preceded(",", expr)+ ")"                 {}
+
+// Some basic syntax elements
 
 %inline unary_op:
 | "!"   {}
@@ -203,6 +198,9 @@ generic_arguments:
 identifier:
 | "<id>"    {}
 
+quoted_identifier:
+| "<qid>"   {}
+
 literal:
 | "<int>"                   {}
 | "<float>"                 {}
@@ -211,3 +209,50 @@ literal:
 
 hole:
 | "_" {}
+
+path:
+| separated_nonempty_list("::", identifier) {}
+
+delimited_split_list(x, param, y):
+| x separated_list(",", param) y {}
+
+block(content):
+| "{" content* "}"   {}   
+
+// Syntax elements of types
+
+primitive_type:
+| "unit"    {}
+| "int"     {}
+| "float"   {}
+| "bool"    {}
+| "str"     {}
+
+type_variable:
+| identifier        {}
+| quoted_identifier {}
+
+atomic_type:
+| primitive_type                                {}
+| type_variable                                 {}
+| "(" composite_type ")"                        {}
+| hole                                          {}
+
+instantiated_type:
+| atomic_type delimited_split_list("[", composite_type, "]")? {}
+
+product_type:
+| separated_nonempty_list("*", instantiated_type)  {}
+
+sum_type:
+| separated_nonempty_list("|", product_type) {}
+
+raised_type:
+| "~" sum_type {}
+
+composite_type:
+| separated_nonempty_list("->", sum_type) raised_type? {}
+
+type_constraint:
+| type_variable ":" composite_type  {}
+| composite_type                    {}

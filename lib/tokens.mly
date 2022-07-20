@@ -4,6 +4,7 @@
 %token <string> TK_STR_LITERAL      "<string>"
 %token <bool>   TK_BOOL_LITERAL     "<bool>"
 %token <string> TK_ID               "<id>"
+%token <string> TK_QID              "<qid>"
 %token <string> TK_SHEBANG          "<shebang>"
 
 /* Keywords */
@@ -11,6 +12,7 @@
 %token TK_ELSE          "else"
 %token TK_WHILE         "while"
 %token TK_FOR           "for"
+%token TK_MATCH         "match"
 %token TK_LET           "let"
 %token TK_VAR           "var"
 %token TK_RESUME        "resume"
@@ -20,6 +22,9 @@
 %token TK_FLOAT         "float"
 %token TK_BOOL          "bool"
 %token TK_STR           "str"
+%token TK_RECORD        "record"
+%token TK_ENUM          "enum"
+%token TK_SYNONYM       "synonym"
 %token TK_CLASS         "class"
 %token TK_INTERFACE     "interface"
 %token TK_FUNCTION      "fn"
@@ -28,6 +33,8 @@
 %token TK_TRY           "try"
 %token TK_RAISE         "raise"
 %token TK_RETURN        "return"
+%token TK_USE           "use"
+%token TK_MODULE        "mod"
 
 /* Symbols */
 %token TK_DOT           "."
@@ -65,6 +72,7 @@
 %token TK_SQUOTE        "'"
 %token TK_TILDE         "~"
 %token TK_DCOLON        "::"
+%token TK_COLONBRACKET  ":["
 
 %token TK_EOF
 
