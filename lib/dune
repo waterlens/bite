@@ -11,4 +11,4 @@
 
 (library
  (name bite)
- (modules parser lexer tokens))
+ (modules parser lexer tokens syntax))
