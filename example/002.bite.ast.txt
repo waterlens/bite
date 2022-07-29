@@ -1,0 +1,422 @@
+(Syntax.Prog
+   [Syntax.Module {name = (Some "playground");
+      items =
+      [(Syntax.Use [("std", None); ("io", None)]);
+        Syntax.Func {name = "min";
+          ty_param =
+          [(Syntax.Sum
+              [(Syntax.Prod [(Syntax.App ((Syntax.QuotedIdent "a"), []))])])
+            ];
+          ty =
+          (Syntax.Arrow (
+             (Syntax.Prod
+                [(Syntax.Sum
+                    [(Syntax.Prod
+                        [(Syntax.App ((Syntax.QuotedIdent "a"), []))])
+                      ]);
+                  (Syntax.Sum
+                     [(Syntax.Prod
+                         [(Syntax.App ((Syntax.QuotedIdent "a"), []))])
+                       ])
+                  ]),
+             Syntax.Hole, Syntax.Hole));
+          tm_param = [(Some "v1"); (Some "b")];
+          body =
+          [(Syntax.Ctl
+              (Syntax.If (
+                 (Syntax.BinaryExpr (Syntax.Gt,
+                    (Syntax.PathExpr [("a", None)]),
+                    (Syntax.PathExpr [("b", None)]))),
+                 [(Syntax.Ctl (Syntax.Ret (Syntax.PathExpr [("b", None)])))],
+                 (Some [(Syntax.Ctl
+                           (Syntax.Ret (Syntax.PathExpr [("a", None)])))
+                         ])
+                 )))
+            ]};
+        (Syntax.TyDef
+           Syntax.Enum {name = "Color"; ty_param = [];
+             ctors =
+             [("Red",
+               (Syntax.Arrow ((Syntax.Prod []), Syntax.Hole, Syntax.Unit)),
+               []);
+               ("Yellow",
+                (Syntax.Arrow ((Syntax.Prod []), Syntax.Hole, Syntax.Unit)),
+                []);
+               ("Blue",
+                (Syntax.Arrow ((Syntax.Prod []), Syntax.Hole, Syntax.Unit)),
+                [])
+               ]});
+        (Syntax.TyDef
+           Syntax.Record {name = "RGB"; ty_param = [];
+             fields =
+             [("R",
+               (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Int, []))])]));
+               ("G",
+                (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Int, []))])]));
+               ("B",
+                (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Int, []))])]))
+               ]});
+        (Syntax.TyDef
+           Syntax.Enum {name = "Optional";
+             ty_param =
+             [(Syntax.Sum
+                 [(Syntax.Prod [(Syntax.App ((Syntax.QuotedIdent "a"), []))])
+                   ])
+               ];
+             ctors =
+             [("Some",
+               (Syntax.Arrow (
+                  (Syntax.Prod
+                     [(Syntax.Sum
+                         [(Syntax.Prod
+                             [(Syntax.App ((Syntax.QuotedIdent "a"), []))])
+                           ])
+                       ]),
+                  Syntax.Hole, Syntax.Unit)),
+               [None]);
+               ("None",
+                (Syntax.Arrow ((Syntax.Prod []), Syntax.Hole, Syntax.Unit)),
+                [])
+               ]});
+        Syntax.Eff {name = "Ping";
+          ty_param =
+          [(Syntax.Sum
+              [(Syntax.Prod [(Syntax.App ((Syntax.QuotedIdent "a"), []))])])
+            ];
+          handlers =
+          [{ Syntax.name = "ping";
+             ty_param =
+             [(Syntax.Constr ((Syntax.Ident "Hpo"),
+                 (Syntax.Sum
+                    [(Syntax.Prod
+                        [(Syntax.App ((Syntax.Ident "Pong"),
+                            [(Syntax.Sum
+                                [(Syntax.Prod
+                                    [(Syntax.App ((Syntax.QuotedIdent "a"),
+                                        []))
+                                      ])
+                                  ])
+                              ]
+                            ))
+                          ])
+                      ])
+                 ))
+               ];
+             ty =
+             (Syntax.Arrow (
+                (Syntax.Prod
+                   [(Syntax.Sum
+                       [(Syntax.Prod [(Syntax.App (Syntax.Str, []))])])
+                     ]),
+                (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Unit, []))])]),
+                (Syntax.Sum
+                   [(Syntax.Prod [(Syntax.App ((Syntax.Ident "Hpo"), []))]);
+                     (Syntax.Prod
+                        [(Syntax.App ((Syntax.QuotedIdent "a"), []))])
+                     ])
+                ))
+             }
+            ]};
+        Syntax.Eff {name = "Pong";
+          ty_param =
+          [(Syntax.Sum
+              [(Syntax.Prod [(Syntax.App ((Syntax.QuotedIdent "a"), []))])])
+            ];
+          handlers =
+          [{ Syntax.name = "pong";
+             ty_param =
+             [(Syntax.Constr ((Syntax.Ident "Hpi"),
+                 (Syntax.Sum
+                    [(Syntax.Prod
+                        [(Syntax.App ((Syntax.Ident "Ping"),
+                            [(Syntax.Sum
+                                [(Syntax.Prod
+                                    [(Syntax.App ((Syntax.QuotedIdent "a"),
+                                        []))
+                                      ])
+                                  ])
+                              ]
+                            ))
+                          ])
+                      ])
+                 ))
+               ];
+             ty =
+             (Syntax.Arrow (
+                (Syntax.Prod
+                   [(Syntax.Sum
+                       [(Syntax.Prod [(Syntax.App (Syntax.Str, []))])])
+                     ]),
+                (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Unit, []))])]),
+                (Syntax.Sum
+                   [(Syntax.Prod [(Syntax.App ((Syntax.Ident "Hpi"), []))]);
+                     (Syntax.Prod
+                        [(Syntax.App ((Syntax.QuotedIdent "a"), []))])
+                     ])
+                ))
+             }
+            ]};
+        Syntax.Func {name = "pinger";
+          ty_param =
+          [(Syntax.Sum
+              [(Syntax.Prod [(Syntax.App ((Syntax.QuotedIdent "a"), []))])]);
+            (Syntax.Constr ((Syntax.Ident "Hpi"),
+               (Syntax.Sum
+                  [(Syntax.Prod
+                      [(Syntax.App ((Syntax.Ident "Ping"),
+                          [(Syntax.Sum
+                              [(Syntax.Prod
+                                  [(Syntax.App ((Syntax.QuotedIdent "a"), 
+                                      []))
+                                    ])
+                                ])
+                            ]
+                          ))
+                        ])
+                    ])
+               ))
+            ];
+          ty =
+          (Syntax.Arrow ((Syntax.Prod []),
+             (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Unit, []))])]),
+             (Syntax.Sum
+                [(Syntax.Prod [(Syntax.App ((Syntax.Ident "Hpi"), []))]);
+                  (Syntax.Prod [(Syntax.App ((Syntax.QuotedIdent "a"), []))])
+                  ])
+             ));
+          tm_param = [];
+          body =
+          [(Syntax.Ctl
+              (Syntax.Try (
+                 [(Syntax.Expr
+                     (Syntax.CallExpr (
+                        (Syntax.IndexExpr (
+                           (Syntax.FieldExpr (
+                              (Syntax.PathExpr [("Hpi", None)]),
+                              (Syntax.Named "ping"))),
+                           (Syntax.PathExpr [("Hpo", None)]))),
+                        [(Syntax.Literal (Syntax.String "ping"))])))
+                   ],
+                 [("Hpo", Syntax.Hole,
+                   [{ Syntax.h_name = "pong";
+                      h_ty_arg =
+                      [(Syntax.Sum
+                          [(Syntax.Prod
+                              [(Syntax.App ((Syntax.Ident "Hpi"), []))])
+                            ])
+                        ];
+                      h_ty =
+                      (Syntax.Arrow ((Syntax.Prod [Syntax.Hole]),
+                         Syntax.Hole, Syntax.Hole));
+                      h_tm_arg = ["msg"];
+                      h_stmt =
+                      [(Syntax.Ctl
+                          (Syntax.Resume
+                             (Syntax.BlockExpr
+                                [(Syntax.Expr
+                                    (Syntax.CallExpr (
+                                       (Syntax.PathExpr
+                                          [("pinger",
+                                            (Some [(Syntax.Sum
+                                                      [(Syntax.Prod
+                                                          [(Syntax.App (
+                                                              (Syntax.QuotedIdent
+                                                                 "a"),
+                                                              []))
+                                                            ])
+                                                        ]);
+                                                    (Syntax.Sum
+                                                       [(Syntax.Prod
+                                                           [(Syntax.App (
+                                                               (Syntax.Ident
+                                                                  "Hpi"),
+                                                               []))
+                                                             ])
+                                                         ])
+                                                    ]))
+                                            ]),
+                                       [])))
+                                  ])))
+                        ]
+                      }
+                     ])
+                   ]
+                 )))
+            ]};
+        Syntax.Func {name = "ponger";
+          ty_param =
+          [(Syntax.Sum
+              [(Syntax.Prod [(Syntax.App ((Syntax.QuotedIdent "a"), []))])]);
+            (Syntax.Constr ((Syntax.Ident "Hpo"),
+               (Syntax.Sum
+                  [(Syntax.Prod
+                      [(Syntax.App ((Syntax.Ident "Pong"),
+                          [(Syntax.Sum
+                              [(Syntax.Prod
+                                  [(Syntax.App ((Syntax.QuotedIdent "a"), 
+                                      []))
+                                    ])
+                                ])
+                            ]
+                          ))
+                        ])
+                    ])
+               ))
+            ];
+          ty =
+          (Syntax.Arrow ((Syntax.Prod []),
+             (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Unit, []))])]),
+             (Syntax.Sum
+                [(Syntax.Prod [(Syntax.App ((Syntax.Ident "Hpo"), []))]);
+                  (Syntax.Prod [(Syntax.App ((Syntax.QuotedIdent "a"), []))])
+                  ])
+             ));
+          tm_param = [];
+          body =
+          [(Syntax.Ctl
+              (Syntax.Try (
+                 [(Syntax.Expr
+                     (Syntax.CallExpr (
+                        (Syntax.IndexExpr (
+                           (Syntax.FieldExpr (
+                              (Syntax.PathExpr [("Hpo", None)]),
+                              (Syntax.Named "pong"))),
+                           (Syntax.PathExpr [("Hpi", None)]))),
+                        [(Syntax.Literal (Syntax.String "pong"))])))
+                   ],
+                 [("Hpi", Syntax.Hole,
+                   [{ Syntax.h_name = "ping";
+                      h_ty_arg =
+                      [(Syntax.Sum
+                          [(Syntax.Prod
+                              [(Syntax.App ((Syntax.Ident "Hpo"), []))])
+                            ])
+                        ];
+                      h_ty =
+                      (Syntax.Arrow ((Syntax.Prod [Syntax.Hole]),
+                         Syntax.Hole, Syntax.Hole));
+                      h_tm_arg = ["msg"];
+                      h_stmt =
+                      [(Syntax.Ctl
+                          (Syntax.Resume
+                             (Syntax.BlockExpr
+                                [(Syntax.Expr
+                                    (Syntax.CallExpr (
+                                       (Syntax.PathExpr
+                                          [("ponger",
+                                            (Some [(Syntax.Sum
+                                                      [(Syntax.Prod
+                                                          [(Syntax.App (
+                                                              (Syntax.QuotedIdent
+                                                                 "a"),
+                                                              []))
+                                                            ])
+                                                        ]);
+                                                    (Syntax.Sum
+                                                       [(Syntax.Prod
+                                                           [(Syntax.App (
+                                                               (Syntax.Ident
+                                                                  "Hpi"),
+                                                               []))
+                                                             ])
+                                                         ])
+                                                    ]))
+                                            ]),
+                                       [])))
+                                  ])))
+                        ]
+                      }
+                     ])
+                   ]
+                 )))
+            ]};
+        Syntax.Func {name = "make_RGB"; ty_param = [];
+          ty =
+          (Syntax.Arrow (
+             (Syntax.Prod
+                [(Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Int, []))])]);
+                  (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Int, []))])]);
+                  (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Int, []))])])
+                  ]),
+             (Syntax.Sum
+                [(Syntax.Prod [(Syntax.App ((Syntax.Ident "RGB"), []))])]),
+             Syntax.Hole));
+          tm_param = [(Some "R"); (Some "G"); (Some "B")];
+          body =
+          [(Syntax.Ctl
+              (Syntax.Ret
+                 (Syntax.RecordExpr ("RGB", None,
+                    [("R", None); ("G", None); ("B", None)]))))
+            ]};
+        Syntax.Func {name = "try_divide"; ty_param = [];
+          ty =
+          (Syntax.Arrow (
+             (Syntax.Prod
+                [(Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Int, []))])]);
+                  (Syntax.Sum [(Syntax.Prod [(Syntax.App (Syntax.Int, []))])])
+                  ]),
+             (Syntax.Sum
+                [(Syntax.Prod
+                    [(Syntax.App ((Syntax.Ident "Optional"),
+                        [(Syntax.Sum
+                            [(Syntax.Prod
+                                [(Syntax.App (
+                                    (Syntax.Sum
+                                       [(Syntax.Prod
+                                           [(Syntax.App (Syntax.Int, []));
+                                             (Syntax.App (Syntax.Int, []))])
+                                         ]),
+                                    []))
+                                  ])
+                              ])
+                          ]
+                        ))
+                      ])
+                  ]),
+             Syntax.Hole));
+          tm_param = [(Some "a"); (Some "b")];
+          body =
+          [(Syntax.Ctl
+              (Syntax.If (
+                 (Syntax.BinaryExpr (Syntax.Eq,
+                    (Syntax.PathExpr [("b", None)]),
+                    (Syntax.Literal (Syntax.Int 0)))),
+                 [(Syntax.Ctl (Syntax.Ret (Syntax.PathExpr [("None", None)])))
+                   ],
+                 (Some [(Syntax.Ctl
+                           (Syntax.Ret
+                              (Syntax.CallExpr (
+                                 (Syntax.PathExpr [("Some", None)]),
+                                 [(Syntax.TupleExpr
+                                     [(Syntax.BinaryExpr (Syntax.Div,
+                                         (Syntax.PathExpr [("a", None)]),
+                                         (Syntax.PathExpr [("b", None)])));
+                                       (Syntax.BinaryExpr (Syntax.Mod,
+                                          (Syntax.PathExpr [("a", None)]),
+                                          (Syntax.PathExpr [("b", None)])))
+                                       ])
+                                   ]
+                                 ))))
+                         ])
+                 )))
+            ]};
+        Syntax.Func {name = "array"; ty_param = [];
+          ty = (Syntax.Arrow ((Syntax.Prod []), Syntax.Hole, Syntax.Hole));
+          tm_param = [];
+          body =
+          [Syntax.Bind {name = "arr"; mut = true; ty = Syntax.Hole;
+             init =
+             (Syntax.ArrayExpr
+                [(Syntax.Literal (Syntax.Int 1));
+                  (Syntax.Literal (Syntax.Int 2));
+                  (Syntax.Literal (Syntax.Int 3));
+                  (Syntax.Literal (Syntax.Int 4));
+                  (Syntax.Literal (Syntax.Int 5))])};
+            (Syntax.Expr
+               (Syntax.BinaryExpr (Syntax.Asgn,
+                  (Syntax.IndexExpr ((Syntax.PathExpr [("arr", None)]),
+                     (Syntax.Literal (Syntax.Int 1)))),
+                  (Syntax.Literal (Syntax.Int 0)))))
+            ]}
+        ]}
+     ])
