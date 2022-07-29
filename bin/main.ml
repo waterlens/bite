@@ -17,7 +17,9 @@ let run file =
   let ch = open_in_bin file in
   let buf = Lexing.from_channel ch in
   Lexing.set_filename buf file;
-  try Parser.entry Lexer.tokenize buf with
+  try 
+    Printf.printf "%s\n" (Syntax.show_prog @@ Parser.entry Lexer.tokenize buf);
+  with
   | Parser.Error ->
       Printf.eprintf "Parser failed: %a\n%!" print_pos (lexeme_start_p buf)
   | Lexer.Error (_cause, location) ->

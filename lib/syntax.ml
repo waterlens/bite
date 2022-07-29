@@ -12,11 +12,34 @@ type ty =
   | Sum of ty list
   | Arrow of ty * ty * ty
   | Constr of ty * ty
+[@@deriving show]
+
+type binary_op =
+  | Asgn
+  | Add
+  | Sub
+  | Mul
+  | Div
+  | Mod
+  | Eq
+  | Neq
+  | Gt
+  | Ge
+  | Lt
+  | Le
+  | LAnd
+  | LOr
+[@@deriving show]
+
+type unary_op = LNot | Plus | Minus [@@deriving show]
+
+type literal = Int of int | Float of float | Bool of bool | String of string
+[@@deriving show]
 
 type prog = Prog of item list
 
 and item =
-  | Module of { name : string; items : item list }
+  | Module of { name : string option; items : item list }
   | Use of path
   | Func of {
       name : string;
@@ -34,12 +57,12 @@ and ty_def =
   | Enum of {
       name : string;
       ty_param : ty list;
-      ctors : string * ty * string option list;
+      ctors : (string * ty * string option list) list;
     }
-  | Record of { name : string; ty_param : ty list; fields : string * ty }
+  | Record of { name : string; ty_param : ty list; fields : (string * ty) list }
   | Synonym of { name : string; ty_param : ty list; ty : ty }
 
-and path = (string * ty list) list
+and path = (string * ty list option) list
 
 and stmt =
   | Empty
@@ -56,11 +79,25 @@ and ctl =
   | Ret of expr
 
 and eff_handler = {
-  handler_name : string;
-  handler_ty_arg : ty list option;
-  handler_ty : ty option;
-  handler_tm_arg : string list;
-  handler_stmt : stmt list;
+  h_name : string;
+  h_ty_arg : ty list;
+  h_ty : ty;
+  h_tm_arg : string list;
+  h_stmt : stmt list;
 }
 
-and expr = unit
+and field = Named of string | Ordinal of int
+
+and expr =
+  | BinaryExpr of binary_op * expr * expr
+  | UnaryExpr of unary_op * expr
+  | Literal of literal
+  | ArrayExpr of expr list
+  | CallExpr of expr * expr list
+  | FieldExpr of expr * field
+  | PathExpr of path
+  | IndexExpr of expr * expr
+  | RecordExpr of string * ty list option * (string * expr option) list
+  | TupleExpr of expr list
+  | BlockExpr of stmt list
+[@@deriving show]

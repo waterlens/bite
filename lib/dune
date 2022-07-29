@@ -11,4 +11,5 @@
 
 (library
  (name bite)
+ (preprocess (pps ppx_deriving.show ppx_deriving.ord))
  (modules parser lexer tokens syntax))

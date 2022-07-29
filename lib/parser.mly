@@ -1,3 +1,7 @@
+%{
+open Syntax
+%}
+
 %nonassoc "="
 %left "||"
 %left "&&"
@@ -10,249 +14,384 @@
 %nonassoc "(" "["
 
 %start entry
-%type <unit> entry
+%type <prog> entry
 
 %%
 entry:
-| "<shebang>"? item* TK_EOF
-    {}
+| "<shebang>"? xs = item* TK_EOF { Prog xs }
 
 item:
-| mod_definition
-    {}
-| use_directive
-    {}
-| fn_definition
-    {}
-| type_definition
-    {}
-| effect_definition
-    {}
+| x = mod_definition { x }
+| x = use_directive { x }
+| x = fn_definition { x }
+| x = type_definition { x }
+| x = effect_definition { x }
 
 // Syntax elements of modules
 mod_definition:
-| "mod" "<id>"? block(item) {}
+| "mod" name = "<id>"?  items = block(item)
+  {
+    Module { name; items }
+  }
 
 // Synatx elements of use directive
 use_directive:
-| "use" path {}
+| "use" x = path
+  {
+    Use x
+  }
 
 // Synatx elements of function definiton
 fn_definition:
-| fn_signature block(stmt) {}
+| sign = fn_signature body = block(stmt)
+  {
+    let (name, ty_param, ty, tm_param) = sign in
+    Func { name; ty_param; ty; tm_param; body }
+  }
 
 fn_signature:
-| "fn" identifier generic_signature?
-  delimited_split_list("(", parameter_signature, ")")
-  type_annotation? {}
+| "fn" name = identifier ty_param = loption(generic_signature)
+  params = delimited_split_list("(", parameter_signature, ")")
+  ty = type_annotation?
+  {
+    let (idents, tys) =  List.split params in
+    let (t1, t2) = Option.value ty ~default:(Hole, Hole) in
+    let ty = Arrow (Prod tys, t1, t2) in
+    (name, ty_param, ty, idents)
+  }
 
 %inline generic_signature:
-| delimited_split_list("[", type_constraint, "]") {}
+| xs = delimited_split_list("[", type_constraint, "]")
+  {
+    xs
+  }
 
 parameter_signature:
-| identifier ":" composite_type   {}
-| composite_type {}
+| x = identifier ":" t = composite_type
+  {
+    (Some x, t)
+  }
+| t = composite_type
+  {
+    (None, t)
+  }
 
 type_annotation:
-| ":" composite_type                 {}
+| ":" t = incomplete_type
+  {
+    t
+  }
 
 parameter_declaration:
-| identifier preceded(":", composite_type)?     {}
+| x = identifier t = preceded(":", composite_type)?
+  {
+    (x, Option.value t ~default:Hole)
+  }
 
 // Syntax elements of type definition (specifically record type, enum type and synonym)
 type_definition:
-| enum_type_definition {}
-| record_type_definition {}
-| synonym_type_definition {}
+| x = enum_type_definition { TyDef x }
+| x = record_type_definition { TyDef x }
+| x = synonym_type_definition { TyDef x }
 
 enum_type_definition:
-| "enum" identifier generic_signature? block(constructor) {}
+| "enum" name = identifier ty_param = loption(generic_signature) ctors = block(constructor)
+  {
+    Enum { name; ty_param; ctors }
+  }
 
 constructor:
-| identifier delimited_split_list("(", parameter_signature, ")")? {}
+| x = identifier params = loption(delimited_split_list("(", parameter_signature, ")"))
+  {
+    let (idents, tys) = List.split params in
+    let ty = Arrow (Prod tys, Hole, Unit) in
+    (x, ty, idents)
+  }
 
 record_type_definition:
-| "record" identifier generic_signature? block(field) {}
+| "record" name = identifier ty_param = loption(generic_signature) fields = block(field)
+  {
+    Record { name; ty_param; fields }
+  }
 
 field:
-| identifier type_annotation {}
+| x = identifier ":" ty = composite_type
+  {
+    (x, ty)
+  }
 
 synonym_type_definition:
-| "synonym" identifier generic_signature? "=" composite_type {}
+| "synonym" name = identifier ty_param = loption(generic_signature) "=" ty = composite_type
+  {
+    Synonym { name; ty_param; ty }
+  }
 
 // Syntax elements of effect definition
 effect_definition:
-| "effect" identifier generic_signature? block(effect_raiser_signature) {}
+| "effect" name = identifier ty_param = loption(generic_signature) handlers = block(effect_raiser_signature)
+  {
+    Eff { name; ty_param; handlers }
+  }
 
 effect_raiser_signature:
-| identifier generic_signature?
-  delimited_split_list("(", parameter_signature, ")")
-  type_annotation? {}
+| name = identifier ty_param = loption(generic_signature)
+  params = delimited_split_list("(", parameter_signature, ")")
+  ty = type_annotation?
+  {
+    let (_, tys) =  List.split params in
+    let (t1, t2) = Option.value ty ~default:(Hole, Hole) in
+    let ty = Arrow (Prod tys, t1, t2) in
+    { name; ty_param; ty }
+  }
 
 // Syntax elements of expressions and statements
 stmt:
-| ";"           {}
-| item ";"      {}
-| decl_stmt     {}
-| expr_stmt     {}
-| ctl_stmt      {}
+| ";"               { Empty }
+| x = item ";"      { Item x }
+| x = decl_stmt     { x }
+| x = expr_stmt     { Expr x }
+| x = ctl_stmt      { Ctl x }
 
 decl_stmt:
-| "let" identifier type_annotation? "=" expr ";"    {}
-| "var" identifier type_annotation? "=" expr ";"    {}
+| "let" name = identifier ty = preceded(":", composite_type)? "=" init = expr ";"
+  {
+    Bind { name; ty = Option.value ty ~default:Hole; init; mut = false }
+  }
+| "var" name = identifier ty = preceded(":", composite_type)? "=" init = expr ";"
+  {
+    Bind { name; ty = Option.value ty ~default:Hole; init; mut = true }
+  }
 
 expr_stmt:
-| expr ";"             {}
-| block(stmt)          {}
+| x = expr ";"
+  {
+    x
+  }
+| xs = block(stmt)
+  {
+    BlockExpr xs
+  }
 
 ctl_stmt:
-| "resume" expr_stmt                    {}
-| "if" "(" expr ")" block(stmt) else_clause?    {}
-| "while" "(" expr ")" block(stmt)              {}
-| "try" block(stmt) with_clause*        {}
-| "return" expr ";"                     {}
+| "resume" x = expr_stmt
+  {
+    Resume x
+  }
+| "if" "(" cond = expr ")" t = block(stmt) f = else_clause?
+  {
+    If (cond, t, f)
+  }
+| "while" "(" cond = expr ")" body = block(stmt)
+  {
+    While (cond, body)
+  }
+| "try" body = block(stmt) xs = with_clause*
+  {
+    Try (body, xs)
+  }
+| "return" x = expr ";"
+  {
+    Ret x
+  }
 
 with_clause:
-| "with" effect_handler_definition {}
+| "with" x = effect_handler_definition { x }
 
 effect_handler_definition:
-| identifier type_annotation?
-  block(effect_handler_signature) {}
+| name = identifier ty = type_annotation?
+  xs = block(effect_handler_signature) {
+    let (ty1, _) = (Option.value ty ~default:(Hole, Hole)) in
+    (name, ty1, xs)
+  }
 
 effect_handler_signature:
-| identifier generic_signature?
-  delimited_split_list("(", parameter_declaration, ")")
-  type_annotation? block(stmt) {}
+| h_name = identifier h_ty_arg = loption(generic_signature)
+  params = delimited_split_list("(", parameter_declaration, ")")
+  ret_ty = type_annotation? h_stmt = block(stmt)
+  {
+    let (h_tm_arg, tys) = List.split params in
+    let (ret_ty, eff_ty) = Option.value ret_ty ~default:(Hole, Hole) in
+    let h_ty = Arrow (Prod tys, ret_ty, eff_ty) in
+    { h_name; h_ty_arg; h_ty; h_tm_arg; h_stmt }
+  }
 
 else_clause:
-| "else" block(stmt) {}
+| "else" xs = block(stmt)
+  {
+    xs
+  }
 
 expr:
-| "(" expr ")"                              {}
-| expr binary_op expr                       {}
-| unary_op expr %prec prec_unary            {}
-| literal                                   {}
-| array_expr                                {}
-| call_expr                                 {}
-| field_expr                                {}
-| path_expr                                 {}
-| index_expr                                {}
-| record_expr                               {}
-| tuple_expr                                {}
+| "(" x = expr ")"
+  { x }
+| x = expr op = binary_op y = expr
+  { BinaryExpr (op, x, y) }
+| op = unary_op x = expr %prec prec_unary
+  { UnaryExpr (op, x) }
+| x = literal
+  { Literal x }
+| xs = array_expr
+  { ArrayExpr xs }
+| x = call_expr
+  { x }
+| x = field_expr
+  { x }
+| x = path_expr
+  { PathExpr x}
+| x = index_expr
+  { x }
+| x = record_expr
+  { x }
+| x = tuple_expr
+  { TupleExpr x }
 
 array_expr:
-| "[" separated_nonempty_list(",", expr) "]" {}
+| "[" xs = separated_nonempty_list(",", expr) "]"
+  { xs }
 
 field_expr:
-| expr "." identifier                       {}
-| expr "." "<int>"                          {}
+| x = expr "." y = identifier
+  { FieldExpr (x, Named y) }
+| x = expr "." y = "<int>"
+  { FieldExpr (x, Ordinal y) }
 
 path_expr:
-| separated_nonempty_list("::", pair(identifier, generic_arguments?))
-  {}
+| x = path
+  { x }
 
 index_expr:
-| expr "[" expr "]"                                 {}
+| x = expr "[" y = expr "]"
+  { IndexExpr (x, y) }
 
-call_expr: 
-| expr delimited_split_list("(", expr, ")")         {}
+call_expr:
+| f = expr xs = delimited_split_list("(", expr, ")")
+  { CallExpr (f, xs) }
 
 generic_arguments:
-| delimited_split_list(":[", composite_type, "]")   {}
+| xs = delimited_split_list(":[", composite_type, "]")
+  { xs }
 
 record_expr:
-| identifier generic_arguments? block(terminated(field_initializer, ","?))
-  {}
+| x = identifier y = generic_arguments? z = block(terminated(field_initializer, ","?))
+  { RecordExpr (x, y, z) }
 
 field_initializer:
-| "." identifier preceded("=", expr)?               {}
+| "." x = identifier y = preceded("=", expr)?
+  { (x, y) }
 
 %inline tuple_expr:
-| "(" ")"                                           {}
-| "(" expr "," ")"                                  {}
-| "(" expr preceded(",", expr)+ ")"                 {}
+| "(" ")"                                           { [] }
+| "(" x = expr "," ")"                              { [x] }
+| "(" x = expr xs = preceded(",", expr)+ ")"        { x :: xs }
 
 // Some basic syntax elements
 
 %inline unary_op:
-| "!"   {}
-| "+"   {}
-| "-"   {}
+| "!"   { LNot }
+| "+"   { Plus }
+| "-"   { Minus }
 
 %inline binary_op:
-| "="   {}
-| "+"   {}
-| "-"   {}
-| "*"   {}
-| "/"   {}
-| "%"   {}
-| "=="  {}
-| "!="  {}
-| ">"   {}
-| ">="  {}
-| "<"   {}
-| "<="  {}
-| "&&"  {}
-| "||"  {}
+| "="   { Asgn }
+| "+"   { Add }
+| "-"   { Sub }
+| "*"   { Mul }
+| "/"   { Div }
+| "%"   { Mod }
+| "=="  { Eq }
+| "!="  { Neq }
+| ">"   { Gt }
+| ">="  { Ge }
+| "<"   { Lt }
+| "<="  { Le }
+| "&&"  { LAnd }
+| "||"  { LOr }
 
 identifier:
-| "<id>"    {}
+| x = "<id>"  { x }
 
 quoted_identifier:
-| "<qid>"   {}
+| x = "<qid>"   { x }
 
 literal:
-| "<int>"                   {}
-| "<float>"                 {}
-| "<string>"                {}
-| "<bool>"                  {}
+| x = "<int>"           { Int x }
+| x = "<float>"         { Float x }
+| x = "<string>"        { String x }
+| x = "<bool>"          { Bool x}
 
 hole:
-| "_" {}
+| "_" { Hole }
 
 path:
-| separated_nonempty_list("::", identifier) {}
+| xs = separated_nonempty_list("::", pair(identifier, generic_arguments?))
+  { xs }
 
 delimited_split_list(x, param, y):
-| x separated_list(",", param) y {}
+| x xs = separated_list(",", param) y { xs }
 
 block(content):
-| "{" content* "}"   {}   
+| "{" xs = content* "}"   { xs }
 
 // Syntax elements of types
 
 primitive_type:
-| "unit"    {}
-| "int"     {}
-| "float"   {}
-| "bool"    {}
-| "str"     {}
+| "unit"    { Unit }
+| "int"     { Int }
+| "float"   { Float }
+| "bool"    { Bool }
+| "str"     { Str }
 
 type_variable:
-| identifier        {}
-| quoted_identifier {}
+| x = identifier        { Ident x }
+| x = quoted_identifier { QuotedIdent x }
 
 atomic_type:
-| primitive_type                                {}
-| type_variable                                 {}
-| "(" composite_type ")"                        {}
-| hole                                          {}
+| t = primitive_type
+  { t }
+| t = type_variable
+  { t }
+| "(" t = composite_type ")"
+  { t }
+| hole
+  { Hole }
 
 instantiated_type:
-| atomic_type delimited_split_list("[", composite_type, "]")? {}
+| x = atomic_type args = loption(delimited_split_list("[", composite_type, "]"))
+  { App (x, args) }
 
 product_type:
-| separated_nonempty_list("*", instantiated_type)  {}
+| xs = separated_nonempty_list("*", instantiated_type)
+  { Prod xs }
 
 sum_type:
-| separated_nonempty_list("|", product_type) {}
+| xs = separated_nonempty_list("|", product_type)
+  { Sum xs }
 
 raised_type:
-| "~" sum_type {}
+| "~" t = sum_type
+  { t }
+
+arrow_type:
+| t = sum_type
+  { t }
+| t1 = sum_type "->" t2 = arrow_type t3 = raised_type?
+  {
+    Arrow (t1, t2, (Option.value t3 ~default:Hole))
+  }
 
 composite_type:
-| separated_nonempty_list("->", sum_type) raised_type? {}
+| t = arrow_type
+  { t }
+
+incomplete_type: 
+| t = composite_type sfix = raised_type?
+  { 
+    (t, Option.value sfix ~default:Hole)
+  }
+
 
 type_constraint:
-| type_variable ":" composite_type  {}
-| composite_type                    {}
+| x = type_variable ":" y = composite_type
+  { Constr (x, y) }
+| x = composite_type
+  { x }
