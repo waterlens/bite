@@ -360,14 +360,8 @@
                     [(Syntax.App ((Syntax.Ident "Optional"),
                         [(Syntax.Sum
                             [(Syntax.Prod
-                                [(Syntax.App (
-                                    (Syntax.Sum
-                                       [(Syntax.Prod
-                                           [(Syntax.App (Syntax.Int, []));
-                                             (Syntax.App (Syntax.Int, []))])
-                                         ]),
-                                    []))
-                                  ])
+                                [(Syntax.App (Syntax.Int, []));
+                                  (Syntax.App (Syntax.Int, []))])
                               ])
                           ]
                         ))

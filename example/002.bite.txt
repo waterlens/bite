@@ -67,7 +67,7 @@ mod playground {
     return RGB { .R, .G, .B };
   }
 
-  fn try_divide(a: int, b: int) : Optional[(int * int)] {
+  fn try_divide(a: int, b: int) : Optional[int * int] {
     if (b == 0) {
       return None;
     } else {
