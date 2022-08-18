@@ -55,8 +55,8 @@ fn_signature:
   ty = type_annotation?
   {
     let (idents, tys) =  List.split params in
-    let (t1, t2) = Option.value ty ~default:(Hole, Hole) in
-    let ty = Arrow (Prod tys, t1, t2) in
+    let (t1, t2) = Option.value ty ~default:(TyHole, TyHole) in
+    let ty = TyArrow (TyProd tys, t1, t2) in
     (name, ty_param, ty, idents)
   }
 
@@ -85,7 +85,7 @@ type_annotation:
 parameter_declaration:
 | x = identifier t = preceded(":", composite_type)?
   {
-    (x, Option.value t ~default:Hole)
+    (x, Option.value t ~default:TyHole)
   }
 
 // Syntax elements of type definition (specifically record type, enum type and synonym)
@@ -104,7 +104,7 @@ constructor:
 | x = identifier params = loption(delimited_split_list("(", parameter_signature, ")"))
   {
     let (idents, tys) = List.split params in
-    let ty = Arrow (Prod tys, Hole, Unit) in
+    let ty = TyArrow (TyProd tys, TyHole, TyUnit) in
     (x, ty, idents)
   }
 
@@ -139,8 +139,8 @@ effect_raiser_signature:
   ty = type_annotation?
   {
     let (_, tys) =  List.split params in
-    let (t1, t2) = Option.value ty ~default:(Hole, Hole) in
-    let ty = Arrow (Prod tys, t1, t2) in
+    let (t1, t2) = Option.value ty ~default:(TyHole, TyHole) in
+    let ty = TyArrow (TyProd tys, t1, t2) in
     { name; ty_param; ty }
   }
 
@@ -155,11 +155,11 @@ stmt:
 decl_stmt:
 | "let" name = identifier ty = preceded(":", composite_type)? "=" init = expr ";"
   {
-    Bind { name; ty = Option.value ty ~default:Hole; init; mut = false }
+    Bind { name; ty = Option.value ty ~default:TyHole; init; mut = false }
   }
 | "var" name = identifier ty = preceded(":", composite_type)? "=" init = expr ";"
   {
-    Bind { name; ty = Option.value ty ~default:Hole; init; mut = true }
+    Bind { name; ty = Option.value ty ~default:TyHole; init; mut = true }
   }
 
 expr_stmt:
@@ -200,7 +200,7 @@ with_clause:
 effect_handler_definition:
 | name = identifier ty = type_annotation?
   xs = block(effect_handler_signature) {
-    let (ty1, _) = (Option.value ty ~default:(Hole, Hole)) in
+    let (ty1, _) = (Option.value ty ~default:(TyHole, TyHole)) in
     (name, ty1, xs)
   }
 
@@ -210,8 +210,8 @@ effect_handler_signature:
   ret_ty = type_annotation? h_stmt = block(stmt)
   {
     let (h_tm_arg, tys) = List.split params in
-    let (ret_ty, eff_ty) = Option.value ret_ty ~default:(Hole, Hole) in
-    let h_ty = Arrow (Prod tys, ret_ty, eff_ty) in
+    let (ret_ty, eff_ty) = Option.value ret_ty ~default:(TyHole, TyHole) in
+    let h_ty = TyArrow (TyProd tys, ret_ty, eff_ty) in
     { h_name; h_ty_arg; h_ty; h_tm_arg; h_stmt }
   }
 
@@ -292,7 +292,6 @@ field_initializer:
 | "-"   { Minus }
 
 %inline binary_op:
-| "="   { Asgn }
 | "+"   { Add }
 | "-"   { Sub }
 | "*"   { Mul }
@@ -314,13 +313,13 @@ quoted_identifier:
 | x = "<qid>"   { x }
 
 literal:
-| x = "<int>"           { Int x }
-| x = "<float>"         { Float x }
-| x = "<string>"        { String x }
-| x = "<bool>"          { Bool x}
+| x = "<int>"           { IntLiteral x }
+| x = "<float>"         { FloatLiteral x }
+| x = "<string>"        { StringLiteral x }
+| x = "<bool>"          { BoolLiteral x}
 
 hole:
-| "_" { Hole }
+| "_" { TyHole }
 
 path:
 | xs = separated_nonempty_list("::", pair(identifier, generic_arguments?))
@@ -335,11 +334,11 @@ block(content):
 // Syntax elements of types
 
 primitive_type:
-| "unit"    { Unit }
-| "int"     { Int }
-| "float"   { Float }
-| "bool"    { Bool }
-| "str"     { Str }
+| "unit"    { TyUnit }
+| "int"     { TyInt }
+| "float"   { TyFloat }
+| "bool"    { TyBool }
+| "str"     { TyStr }
 
 type_variable:
 | x = identifier        { Ident x }
@@ -353,19 +352,19 @@ atomic_type:
 | "(" t = composite_type ")"
   { t }
 | hole
-  { Hole }
+  { TyHole }
 
 instantiated_type:
 | x = atomic_type args = loption(delimited_split_list("[", composite_type, "]"))
-  { App (x, args) }
+  { TyApp (x, args) }
 
 product_type:
 | xs = separated_nonempty_list("*", instantiated_type)
-  { Prod xs }
+  { TyProd xs }
 
 sum_type:
 | xs = separated_nonempty_list("|", product_type)
-  { Sum xs }
+  { TySum xs }
 
 raised_type:
 | "~" t = sum_type
@@ -376,7 +375,7 @@ arrow_type:
   { t }
 | t1 = sum_type "->" t2 = arrow_type t3 = raised_type?
   {
-    Arrow (t1, t2, (Option.value t3 ~default:Hole))
+    TyArrow (t1, t2, (Option.value t3 ~default:TyHole))
   }
 
 composite_type:
@@ -386,12 +385,12 @@ composite_type:
 incomplete_type: 
 | t = composite_type sfix = raised_type?
   { 
-    (t, Option.value sfix ~default:Hole)
+    (t, Option.value sfix ~default:TyHole)
   }
 
 
 type_constraint:
 | x = type_variable ":" y = composite_type
-  { Constr (x, y) }
+  { TyConstr (x, y) }
 | x = composite_type
   { x }

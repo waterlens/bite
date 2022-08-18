@@ -1,21 +1,20 @@
 type ty =
-  | Unit
-  | Int
-  | Float
-  | Bool
-  | Str
-  | Hole
+  | TyUnit
+  | TyInt
+  | TyFloat
+  | TyBool
+  | TyStr
+  | TyHole
   | Ident of string
   | QuotedIdent of string
-  | App of ty * ty list
-  | Prod of ty list
-  | Sum of ty list
-  | Arrow of ty * ty * ty
-  | Constr of ty * ty
+  | TyApp of ty * ty list
+  | TyProd of ty list
+  | TySum of ty list
+  | TyArrow of ty * ty * ty
+  | TyConstr of ty * ty
 [@@deriving show]
 
 type binary_op =
-  | Asgn
   | Add
   | Sub
   | Mul
@@ -33,7 +32,11 @@ type binary_op =
 
 type unary_op = LNot | Plus | Minus [@@deriving show]
 
-type literal = Int of int | Float of float | Bool of bool | String of string
+type literal =
+  | IntLiteral of int
+  | FloatLiteral of float
+  | BoolLiteral of bool
+  | StringLiteral of string
 [@@deriving show]
 
 type prog = Prog of item list
