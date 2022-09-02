@@ -1,5 +1,6 @@
 %{
 open Syntax
+open Types
 %}
 
 %nonassoc "="
