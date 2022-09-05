@@ -39,43 +39,94 @@ type bmodule = {
   mods : bmodule list;
 }
 
-type enviroment = {
+type mod_env = {
   mods : (string, bmodule) trie;
   uses : (string, bmodule) trie list;
   curmod : bmodule * string list;
 }
 
-let create_module env name =
+type ty_env = { types : (string, ty) scope }
+type ctor_env = { ctors: (string, ty) scope }
+
+let create_module menv name =
   let new_mod = { name; functions = []; types = []; effects = []; mods = [] } in
-  match env.curmod with
+  match menv.curmod with
   | _, path ->
       let new_path = name :: path in
       let rev_path = List.rev new_path in
       let curmod = (new_mod, new_path) in
-      let mods = Trie.insert env.mods rev_path new_mod in
-      let uses = env.mods :: env.uses in
+      let mods = Trie.insert menv.mods rev_path new_mod in
+      let uses = menv.mods :: menv.uses in
       { curmod; mods; uses }
 
-let update_use env path =
-  let { mods; uses; curmod } = env in
+let update_use menv path =
+  let { mods; uses; curmod } = menv in
   let last_use = List.hd uses in
   let used_mod = Trie.find last_use path in
   let new_use = Trie.insert last_use path used_mod in
   let uses = new_use :: List.tl uses in
   { mods; uses; curmod }
 
-let used_path (path : path) =
+let used_path path =
   let f = function
     | s, None -> s
     | _, Some _ -> raise @@ Error "use path can't have type parameters"
   in
   List.map f path
 
+let rec extend_ty_env_with_ty_param_from n tenv ty_param =
+  match ty_param with
+  | [] -> tenv
+  | x :: xs ->
+      (match x with
+      | QuotedIdent s | Ident s -> Scope.insert tenv.types s (TyVar n)
+      | _ -> raise @@ Error "type parameter is not a variable");
+      extend_ty_env_with_ty_param_from (n + 1) tenv xs
+
+let extend_ty_env_with_ty_param = extend_ty_env_with_ty_param_from 0
+
+let rec subst_named_ty tenv ty allow_hole =
+  let subst ty = subst_named_ty tenv ty allow_hole in
+  let substs tys = subst_named_ty_list tenv tys allow_hole in
+  match ty with
+  | TyUnit | TyInt | TyFloat | TyBool | TyStr -> ty
+  | TyHole ->
+      if allow_hole then ty else raise @@ Error "hole type is not allowed"
+  | Ident s | QuotedIdent s -> Scope.lookup tenv.types s
+  | TyApp (t1, t2) -> TyApp (subst t1, substs t2)
+  | TyProd tls -> TyProd (substs tls)
+  | TySum tls -> TyProd (substs tls)
+  | TyArrow (t1, t2, t3) -> TyArrow (subst t1, subst t2, subst t3)
+  | TyConstr (t1, t2) -> TyConstr (subst t1, subst t2)
+  | TyArray t -> TyArray (subst t)
+  | TyVar _ | TyAbs _ -> ty
+
+and subst_named_ty_list tenv tys allow_hole =
+  List.map (fun ty -> subst_named_ty tenv ty allow_hole) tys
+
+let split_ctor_param_ty ctor_ty =
+  match ctor_ty with
+  | TyArrow (a, _, _) -> a
+  | _ -> raise @@ Error "unexpected ctor type"
+
+let mk_sum_ty tenv ty_param ctors =
+  let tenv = { types = Scope.entry tenv.types } in
+  let tenv = extend_ty_env_with_ty_param tenv ty_param in
+  let tys = List.map split_ctor_param_ty ctors in
+  let tys = subst_named_ty_list tenv tys true in
+  TySum tys
+
+let extend_name_env_with_ctor nenv ty_param ctors =
+  ()                                          
+
 let rec walk_prog env prog = match prog with Prog p -> walk_items env p
 
-and update_env_with_type_def env = function
-  | Enum { name; ty_param; ctors } -> env
-  | _ -> env
+and update_env_with_type_def tenv = function
+  | Enum { name; ty_param; ctors } -> tenv
+  (* let { types } = tenv in
+       Scope.insert types name
+  *)
+  | _ -> tenv
 
 and walk_items env is =
   match is with

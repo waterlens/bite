@@ -13,4 +13,11 @@ type ty =
   | TyArrow of ty * ty * ty
   | TyConstr of ty * ty
   | TyArray of ty
+  | TyVar of tvar ref
+  | TyAbs of ty
+and tvar = 
+  | Generic of int
+  | Link of ty
+  | Bound of int
+  | Unbound of int
 [@@deriving show]
