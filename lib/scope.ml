@@ -1,5 +1,3 @@
-open Errors
-
 type ('a, 'b) scope = ('a, 'b) Hashtbl.t list
 
 exception EmptyScope

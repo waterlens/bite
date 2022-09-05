@@ -1,0 +1,39 @@
+fn min [a] (v1: a, v2: a) : a {
+  if (a > b) { 
+    return a;
+  } else { 
+    return b;
+  }
+}
+
+enum Color {
+  Red
+  Yellow
+  Blue
+}
+
+enum Optional [a] {
+  Some (a)
+  None 
+}
+
+effect Ping [a] {
+  ping[Hpo : Pong [a]] (str) : unit ~ Hpo | a
+}
+
+effect Pong [a] {
+  pong[Hpi: Ping [a]](str) : unit ~ Hpi | a
+}
+
+fn pinger [a, Hpi: Ping[a]] () : unit ~ Hpi | a {
+  try {
+    Hpi.ping:[Hpi] ("ping");
+  }
+  with Hpo : Pong[a] {
+    pong [Hpi : Ping[a]] (msg : str) : unit ~ Hpi | a {
+        resume {
+            pinger:[a, Hpi] ();
+        }
+    }
+  }
+}

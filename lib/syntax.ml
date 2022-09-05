@@ -25,38 +25,49 @@ type literal =
   | StringLiteral of string
 [@@deriving show]
 
+type complex_ty_param = GenericVar of string | HandlerVar of string * ty
+[@@deriving show]
+
+type simple_ty_param = string [@@deriving show]
+
 type prog = Prog of item list
 
 and item =
-  | Module of { name : string option; items : item list }
-  | Use of path
   | Func of {
       name : string;
-      ty_param : ty list;
-      ty : ty;
-      tm_param : string option list;
+      generic_param : complex_ty_param list;
+      param : (string * ty) list;
+      ty_ann : ty * ty option; (* result ty * raised ty *)
       body : stmt list;
     }
-  | TyDef of ty_def
-  | Eff of { name : string; ty_param : ty list; handlers : handler_sig list }
+  | TyDef of tydef
+  | Eff of { name : string; generic_param : simple_ty_param list; op : op_sig }
 
-and handler_sig = { name : string; ty_param : ty list; ty : ty }
+and op_sig = {
+  op_name : string;
+  op_generic_param : complex_ty_param list;
+  op_param : ty list;
+  op_ty_ann : ty * ty option;
+}
 
-and ty_def =
+and tydef =
   | Enum of {
       name : string;
-      ty_param : ty list;
-      ctors : (string * ty * string option list) list;
+      generic_param : simple_ty_param list;
+      ctors : ctor list;
     }
-  | Record of { name : string; ty_param : ty list; fields : (string * ty) list }
-  | Synonym of { name : string; ty_param : ty list; ty : ty }
+  | Record of {
+      name : string;
+      generic_param : simple_ty_param list;
+      fields : (string * ty) list;
+    }
+  | Synonym of { name : string; generic_param : simple_ty_param list; ty : ty }
 
-and path = (string * ty list option) list
+and ctor = { ctor_name : string; ctor_params : ty list }
 
 and stmt =
   | Empty
-  | Item of item
-  | Bind of { name : string; mut : bool; ty : ty; init : expr }
+  | Bind of { name : string; ty : ty; init : expr }
   | Expr of expr
   | Ctl of ctl
 
@@ -64,15 +75,17 @@ and ctl =
   | Resume of expr
   | If of expr * stmt list * stmt list option
   | While of expr * stmt list
-  | Try of stmt list * (string * ty * eff_handler list) list
+  | Try of stmt list * eff_handler list
   | Ret of expr
 
 and eff_handler = {
-  h_name : string;
-  h_ty_arg : ty list;
-  h_ty : ty;
-  h_tm_arg : string list;
-  h_stmt : stmt list;
+  eff_name : string;
+  eff_ty_ann : ty;
+  handler_name : string;
+  handler_ty_ann : ty * ty option;
+  handler_generic_param : complex_ty_param list;
+  handler_arg : (string * ty) list;
+  handler_stmt : stmt list;
 }
 
 and field = Named of string | Ordinal of int
@@ -84,9 +97,9 @@ and expr =
   | ArrayExpr of expr list
   | CallExpr of expr * expr list
   | FieldExpr of expr * field
-  | PathExpr of path
   | IndexExpr of expr * expr
-  | RecordExpr of string * ty list option * (string * expr option) list
   | TupleExpr of expr list
   | BlockExpr of stmt list
+  | VarExpr of string
+  | GenericExpr of expr * ty list
 [@@deriving show]

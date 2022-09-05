@@ -5,12 +5,11 @@ type ty =
   | TyBool
   | TyStr
   | TyHole
-  | Ident of string
-  | QuotedIdent of string
+  | TyIdent of string
   | TyApp of ty * ty list
   | TyProd of ty list
   | TySum of ty list
-  | TyArrow of ty * ty * ty
+  | TyArrow of ty * ty * ty option
   | TyConstr of ty * ty
   | TyArray of ty
   | TyVar of tvar ref
