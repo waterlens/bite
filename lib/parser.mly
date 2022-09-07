@@ -291,21 +291,21 @@ atomic_type:
 
 instantiated_type:
 | x = atomic_type args = loption(delimited_split_list("[", composite_type, "]"))
-  { TyApp (x, args) }
+  { if args == [] then x else  TyApp (x, args) }
 
 product_type:
 | xs = separated_nonempty_list("*", instantiated_type)
-  { TyProd xs }
+  { if List.tl xs == [] then List.hd xs else TyProd xs }
 
 sum_type:
 | xs = separated_nonempty_list("|", product_type)
-  { TySum xs }
+  { if List.tl xs == [] then List.hd xs else TySum xs }
 
 arrow_type:
 | t = sum_type
   { t }
 | t1 = sum_type "->" t2 = arrow_type
-  { TyArrow (t1, t2, None) }
+  { TyArrow (t1, t2) }
 
 composite_type:
 | t = arrow_type

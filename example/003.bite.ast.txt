@@ -1,0 +1,103 @@
+(Syntax.Prog
+   [Syntax.Func {name = "min"; generic_param = [(Syntax.GenericVar "a")];
+      param = [("v1", (Types.TyIdent "a")); ("v2", (Types.TyIdent "a"))];
+      ty_ann = ((Types.TyIdent "a"), None);
+      body =
+      [(Syntax.Ctl
+          (Syntax.If (
+             (Syntax.BinaryExpr (Syntax.Gt, (Syntax.VarExpr "a"),
+                (Syntax.VarExpr "b"))),
+             [(Syntax.Ctl (Syntax.Ret (Syntax.VarExpr "a")))],
+             (Some [(Syntax.Ctl (Syntax.Ret (Syntax.VarExpr "b")))]))))
+        ]};
+     (Syntax.TyDef
+        Syntax.Enum {name = "Color"; generic_param = [];
+          ctors =
+          [{ Syntax.ctor_name = "Red"; ctor_params = [] };
+            { Syntax.ctor_name = "Yellow"; ctor_params = [] };
+            { Syntax.ctor_name = "Blue"; ctor_params = [] }]});
+     (Syntax.TyDef
+        Syntax.Enum {name = "Optional"; generic_param = ["a"];
+          ctors =
+          [{ Syntax.ctor_name = "Some"; ctor_params = [(Types.TyIdent "a")] };
+            { Syntax.ctor_name = "None"; ctor_params = [] }]});
+     Syntax.Eff {name = "Ping"; generic_param = ["a"];
+       op =
+       { Syntax.op_name = "ping";
+         op_generic_param =
+         [(Syntax.HandlerVar ("Hpo",
+             (Types.TyApp ((Types.TyIdent "Pong"), [(Types.TyIdent "a")]))))
+           ];
+         op_param = [Types.TyStr];
+         op_ty_ann =
+         (Types.TyUnit,
+          (Some (Types.TySum [(Types.TyIdent "Hpo"); (Types.TyIdent "a")])))
+         }};
+     Syntax.Eff {name = "Pong"; generic_param = ["a"];
+       op =
+       { Syntax.op_name = "pong";
+         op_generic_param =
+         [(Syntax.HandlerVar ("Hpi",
+             (Types.TyApp ((Types.TyIdent "Ping"), [(Types.TyIdent "a")]))))
+           ];
+         op_param = [Types.TyStr];
+         op_ty_ann =
+         (Types.TyUnit,
+          (Some (Types.TySum [(Types.TyIdent "Hpi"); (Types.TyIdent "a")])))
+         }};
+     Syntax.Func {name = "pinger";
+       generic_param =
+       [(Syntax.GenericVar "a");
+         (Syntax.HandlerVar ("Hpi",
+            (Types.TyApp ((Types.TyIdent "Ping"), [(Types.TyIdent "a")]))))
+         ];
+       param = [];
+       ty_ann =
+       (Types.TyUnit,
+        (Some (Types.TySum [(Types.TyIdent "Hpi"); (Types.TyIdent "a")])));
+       body =
+       [(Syntax.Ctl
+           (Syntax.Try (
+              [(Syntax.Expr
+                  (Syntax.CallExpr (
+                     (Syntax.GenericExpr (
+                        (Syntax.FieldExpr ((Syntax.VarExpr "Hpi"),
+                           (Syntax.Named "ping"))),
+                        [(Types.TyIdent "Hpo")])),
+                     [(Syntax.Literal (Syntax.StringLiteral "ping"))])))
+                ],
+              [{ Syntax.eff_name = "Hpo";
+                 eff_ty_ann =
+                 (Types.TyApp ((Types.TyIdent "Pong"), [(Types.TyIdent "a")]
+                    ));
+                 handler_name = "pong";
+                 handler_ty_ann =
+                 (Types.TyUnit,
+                  (Some (Types.TySum
+                           [(Types.TyIdent "Hpi"); (Types.TyIdent "a")])));
+                 handler_generic_param =
+                 [(Syntax.HandlerVar ("Hpi",
+                     (Types.TyApp ((Types.TyIdent "Ping"),
+                        [(Types.TyIdent "a")]))
+                     ))
+                   ];
+                 handler_arg = [("msg", Types.TyStr)];
+                 handler_stmt =
+                 [(Syntax.Ctl
+                     (Syntax.Resume
+                        (Syntax.BlockExpr
+                           [(Syntax.Expr
+                               (Syntax.CallExpr (
+                                  (Syntax.GenericExpr (
+                                     (Syntax.VarExpr "pinger"),
+                                     [(Types.TyIdent "a");
+                                       (Types.TyIdent "Hpi")]
+                                     )),
+                                  [])))
+                             ])))
+                   ]
+                 }
+                ]
+              )))
+         ]}
+     ])

@@ -18,7 +18,13 @@
   parser
   syntax
   types
+  semantic
+  lang
   scope
   trie
   errors
-  il))
+  ))
+
+(env
+  (dev
+    (flags (:standard -warn-error -A))))

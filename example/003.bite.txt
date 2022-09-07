@@ -27,7 +27,7 @@ effect Pong [a] {
 
 fn pinger [a, Hpi: Ping[a]] () : unit ~ Hpi | a {
   try {
-    Hpi.ping:[Hpi] ("ping");
+    Hpi.ping:[Hpo] ("ping");
   }
   with Hpo : Pong[a] {
     pong [Hpi : Ping[a]] (msg : str) : unit ~ Hpi | a {
