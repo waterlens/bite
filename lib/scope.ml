@@ -8,7 +8,7 @@ let rec lookup_opt scope k =
   | [] -> None
   | head :: rest -> (
       match Hashtbl.find_opt head k with
-      | Some v -> v
+      | Some _ as v -> v
       | None -> lookup_opt rest k)
 
 let rec lookup scope k =
@@ -20,5 +20,6 @@ let rec lookup scope k =
 let insert scope k v =
   match scope with [] -> raise EmptyScope | head :: _ -> Hashtbl.add head k v
 
-let entry scope = Hashtbl.create 8 :: scope
+let entry scope = Hashtbl.create 16 :: scope
 let leave scope = match scope with [] -> raise EmptyScope | _ :: rest -> rest
+let empty = []

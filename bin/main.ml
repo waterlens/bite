@@ -18,7 +18,9 @@ let run file =
   let buf = Lexing.from_channel ch in
   Lexing.set_filename buf file;
   try 
-    Printf.printf "%s\n" (Syntax.show_prog @@ Parser.entry Lexer.tokenize buf);
+    let prog = Parser.entry Lexer.tokenize buf in
+    Printf.printf "%s\n" (Syntax.show_prog prog);
+    Semantic.pipeline prog
   with
   | Parser.Error ->
       Printf.eprintf "Parser failed: %a\n%!" print_pos (lexeme_start_p buf)

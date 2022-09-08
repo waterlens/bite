@@ -37,3 +37,16 @@ fn pinger [a, Hpi: Ping[a]] () : unit ~ Hpi | a {
     }
   }
 }
+
+fn ponger [a, Hpo: Pong[a]] () : unit ~ Hpo | a {
+  try {
+    Hpo.pong:[Hpi] ("pong");
+  }
+  with Hpi : Ping[a] {
+    ping [Hpo : Pong[a]] (msg : str) : unit ~ Hpo | a {
+        resume {
+            ponger:[a, Hpo] ();
+        }
+    }
+  }
+}

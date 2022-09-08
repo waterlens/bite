@@ -277,7 +277,7 @@ primitive_type:
 
 type_variable:
 | x = identifier
-  { TyIdent x }
+  { TyVar (ref @@ Named x) }
 
 atomic_type:
 | t = primitive_type
