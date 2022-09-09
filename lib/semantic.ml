@@ -8,16 +8,18 @@ exception Unreachable
 type context = {
   mutable fn_ty_ctx : (string, ty) scope;
   mutable eff_ty_ctx : (string, ty) scope;
-  mutable eff_to_eff_op_map : (string, string) scope;
+  mutable eff_op_to_eff_map : (string, string) scope;
   mutable binding_ty_ctx : (string, ty) scope;
+  mutable fn_ty : ty option;
 }
 
 let empty_context =
   {
     fn_ty_ctx = Scope.empty;
     eff_ty_ctx = Scope.empty;
-    eff_to_eff_op_map = Scope.empty;
+    eff_op_to_eff_map = Scope.empty;
     binding_ty_ctx = Scope.empty;
+    fn_ty = None;
   }
 
 let dbg = Printf.printf "%s\n"
@@ -41,8 +43,8 @@ let show_context ctx =
   print_scope ctx.fn_ty_ctx id show_ty;
   dbg "eff_ty_ctx:";
   print_scope ctx.eff_ty_ctx id show_ty;
-  dbg "eff_to_eff_op_map:";
-  print_scope ctx.eff_to_eff_op_map id id;
+  dbg "eff_op_to_eff_map:";
+  print_scope ctx.eff_op_to_eff_map id id;
   dbg "binding_ty_ctx:";
   print_scope ctx.binding_ty_ctx id show_ty;
   ()
@@ -50,7 +52,7 @@ let show_context ctx =
 let entry_context ctx =
   ctx.fn_ty_ctx <- Scope.entry ctx.fn_ty_ctx;
   ctx.eff_ty_ctx <- Scope.entry ctx.eff_ty_ctx;
-  ctx.eff_to_eff_op_map <- Scope.entry ctx.eff_to_eff_op_map;
+  ctx.eff_op_to_eff_map <- Scope.entry ctx.eff_op_to_eff_map;
   ctx.binding_ty_ctx <- Scope.entry ctx.binding_ty_ctx
 
 let single_level_context =
@@ -60,6 +62,28 @@ let single_level_context =
 
 let entry_binding_context ctx =
   ctx.binding_ty_ctx <- Scope.entry ctx.binding_ty_ctx
+
+let leave_binding_context ctx =
+  ctx.binding_ty_ctx <- Scope.leave ctx.binding_ty_ctx
+
+let lookup_in_type_ctx ctx name =
+  match Scope.lookup_opt ctx.fn_ty_ctx name with
+  | Some _ as ty -> ty
+  | None -> (
+      match Scope.lookup_opt ctx.eff_ty_ctx name with
+      | Some _ as ty -> ty
+      | None -> None)
+
+let lookup_in_type_and_binding_ctx ctx name =
+  match Scope.lookup_opt ctx.fn_ty_ctx name with
+  | Some _ as ty -> ty
+  | None -> (
+      match Scope.lookup_opt ctx.eff_ty_ctx name with
+      | Some _ as ty -> ty
+      | None -> (
+          match Scope.lookup_opt ctx.binding_ty_ctx name with
+          | Some _ as ty -> ty
+          | None -> None))
 
 let ty_annotation_to_ty = function t, None -> t | t, Some eff -> TyEff (t, eff)
 
@@ -178,19 +202,12 @@ and walk_eff_phase_1 ctx = function
       let op_type = eff_op_type op in
       let eff_type = eff_type generic_param op_type in
       Scope.insert ctx.eff_ty_ctx name eff_type;
-      Scope.insert ctx.eff_to_eff_op_map name op.op_name;
+      Scope.insert ctx.eff_op_to_eff_map op.op_name name;
       ()
   | _ -> raise Unreachable
 
 let fix_type_cross_ref ctx =
-  let lookup_opt name =
-    match Scope.lookup_opt ctx.fn_ty_ctx name with
-    | Some _ as ty -> ty
-    | None -> (
-        match Scope.lookup_opt ctx.eff_ty_ctx name with
-        | Some _ as ty -> ty
-        | None -> None)
-  in
+  let lookup_opt = lookup_in_type_ctx ctx in
   let fix_ctx ctx =
     List.iter
       (fun tbl ->
@@ -270,7 +287,8 @@ and walk_func_phase_2 ctx = function
           extend_ctx_with_handler_variables ctx ty hvar_list;
           entry_binding_context ctx;
           let param_name = List.map (fun (x, _) -> x) param in
-          extend_ctx_with_parameters ctx ty param_name
+          extend_ctx_with_parameters ctx ty param_name;
+          ctx.fn_ty <- Some ty
       | None -> raise Unreachable)
   | _ -> raise Unreachable
 
@@ -289,9 +307,124 @@ and walk_eff_phase_2 ctx = function
       | None -> raise Unreachable)
   | _ -> raise Unreachable
 
+exception NotImplemented
+
+let flatten_eff_sum ty = match unlink ty with TySum tys -> tys | _ -> [ ty ]
+
+let combine_param_eff tys =
+  let effects = ref [] in
+  let tys =
+    List.map
+      (fun ty ->
+        match unlink ty with
+        | TyEff (t, eff) ->
+            effects := flatten_eff_sum eff;
+            t
+        | _ -> ty)
+      tys
+  in
+  (TyProd tys, !effects)
+
+let resolve_type f ctx =
+  Types.map_named_ty (fun _ name ->
+      match f ctx name with
+      | Some ty -> ref @@ Link ty
+      | None -> raise @@ UnresolvedType name)
+
+let rec type_of_stmt ctx = function
+  | Empty -> TyUnit
+  | Ctl ctl -> type_of_ctl ctx ctl
+  | Bind _ as bind -> type_of_bind ctx bind
+  | Expr expr -> type_of_expr ctx expr
+
+and type_of_ctl ctx = function
+  | If (expr, t, f) -> raise NotImplemented
+  | While (cond, body) -> raise NotImplemented
+  | Resume expr -> TyHole
+  | Try (stmts, eff_handlers) -> TyHole
+  | Ret expr -> raise NotImplemented
+
+and type_of_bind ctx = function
+  | Bind { name; ty; init } ->
+      let init_ty = type_of_expr ctx init in
+      if
+        unlink @@ resolve_type lookup_in_type_and_binding_ctx ctx ty
+        == unlink init_ty
+      then (
+        Scope.insert ctx.binding_ty_ctx name init_ty;
+        TyUnit)
+      else raise @@ Error "inconsistent type of type annotaion and initializer"
+  | _ -> raise Unreachable
+
+and type_of_expr ctx = function
+  | CallExpr (f, args) ->
+      let fn_ty = type_of_expr ctx f in
+      let args_ty = List.map (fun arg -> unlink @@ type_of_expr ctx arg) args in
+      let arg, a_eff = combine_param_eff args_ty in
+      let param, ret, f_eff =
+        match unlink fn_ty with
+        | TyArrow (a, r) -> (a, r, [])
+        | TyEff (TyArrow (a, r), e) -> (a, r, flatten_eff_sum e)
+        | _ -> raise @@ Error "not applicable type"
+      in
+      if arg == param then TyEff (ret, TySum (List.append a_eff f_eff))
+      else raise @@ Error "not compatible arguments"
+  | FieldExpr (e, field) ->
+      let ty = type_of_expr ctx e in
+      if Types.is_eff_op_ty ty then
+        match field with
+        | Named s -> (
+            match Scope.lookup_opt ctx.eff_op_to_eff_map s with
+            | Some s -> (
+                match Scope.lookup_opt ctx.eff_ty_ctx s with
+                | Some eff_ty ->
+                    if eff_ty == ty then ty
+                    else raise @@ Error "inconsistent effect operation"
+                | _ -> raise Unreachable)
+            | _ -> raise @@ Error ("unknown effect operation " ^ s))
+        | Ordinal _ -> raise NotImplemented
+      else raise NotImplemented
+  | BinaryExpr (_, _, _) -> raise NotImplemented
+  | UnaryExpr (_, _) -> raise NotImplemented
+  | Literal l -> (
+      l |> function
+      | StringLiteral _ -> TyStr
+      | FloatLiteral _ -> TyFloat
+      | IntLiteral _ -> TyInt
+      | BoolLiteral _ -> TyBool)
+  | ArrayExpr _ -> raise NotImplemented
+  | IndexExpr (_, _) -> raise NotImplemented
+  | TupleExpr _ -> raise NotImplemented
+  | BlockExpr blk ->
+      entry_binding_context ctx;
+      let ty = type_of_stmts ctx blk in
+      leave_binding_context ctx;
+      ty
+  | VarExpr name -> (
+      match lookup_in_type_and_binding_ctx ctx name with
+      | Some ty -> ty
+      | None ->
+          raise @@ Error ("unable to find name " ^ name ^ " in current context")
+      )
+  | GenericExpr (e, tys) ->
+      let ty = type_of_expr ctx e in
+      let ty_arg =
+        List.map
+          (fun arg ->
+            unlink @@ resolve_type lookup_in_type_and_binding_ctx ctx arg)
+          tys
+      in
+      Types.apply ty ty_arg
+
+and type_of_stmts ctx = function
+  | [] -> TyUnit
+  | [ x ] -> type_of_stmt ctx x
+  | x :: xs ->
+      let _ = type_of_stmt ctx x in
+      type_of_stmts ctx xs
+
 let pipeline prog =
   let ctx = single_level_context in
   walk_prog_phase_1 ctx prog;
-  show_context ctx;
   fix_type_cross_ref ctx;
   walk_prog_phase_2 ctx prog

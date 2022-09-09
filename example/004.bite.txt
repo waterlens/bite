@@ -1,0 +1,24 @@
+effect Ping [a] {
+  ping[Hpo : Pong [a]] (str) : unit ~ Hpo | a
+}
+
+effect Pong [a] {
+  pong[Hpi: Ping [a]](str) : unit ~ Hpi | a
+}
+
+fn pinger [a, Hpi: Ping[a]] () : unit ~ Hpi | a {
+  
+}
+
+fn ponger [a, Hpo: Pong[a]] () : unit ~ Hpo | a {
+  try {
+    Hpo.pong:[Hpi] ("pong");
+  }
+  with Hpi : Ping[a] {
+    ping [Hpo : Pong[a]] (msg : str) : unit ~ Hpo | a {
+        resume {
+            ponger:[a, Hpo] ();
+        }
+    }
+  }
+}
