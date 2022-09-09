@@ -4,6 +4,8 @@ open Scope
 open Types
 
 exception Unreachable
+exception NotImplemented
+exception UnresolvedType of string
 
 type context = {
   mutable fn_ty_ctx : (string, ty) scope;
@@ -230,8 +232,6 @@ let fix_type_cross_ref ctx =
   fix_ctx ctx.fn_ty_ctx;
   fix_ctx ctx.eff_ty_ctx
 
-exception UnresolvedType of string
-
 let report_unresolved_type ty =
   let _ = map_named_ty (fun _ s -> raise @@ UnresolvedType s) ty in
   ()
@@ -259,55 +259,6 @@ let rec extend_ctx_with_parameters ctx ty params =
   | TyArrow (TyProd params_ty, _) ->
       List.iter2 (fun ty name -> extend_ctx ty name) params_ty params
   | _ -> raise @@ Error "not an arrow type"
-
-let rec walk_prog_phase_2 ctx = function
-  | Prog [] -> ()
-  | Prog (x :: xs) ->
-      walk_item_phase_2 ctx x;
-      walk_prog_phase_2 ctx (Prog xs)
-
-and walk_item_phase_2 ctx = function
-  | Func _ as f -> walk_func_phase_2 ctx f
-  | TyDef t -> walk_tydef_phase_2 ctx t
-  | Eff _ as e -> walk_eff_phase_2 ctx e
-
-and walk_func_phase_2 ctx = function
-  | Func { name; generic_param; param; ty_ann; body } -> (
-      match Scope.lookup_opt ctx.fn_ty_ctx name with
-      | Some ty ->
-          dbg @@ "check " ^ name;
-          report_unresolved_type ty;
-          dbg @@ "check " ^ name ^ " done";
-          entry_binding_context ctx;
-          let hvar_list =
-            List.filter_map
-              (function HandlerVar (name, _) -> Some name | _ -> None)
-              generic_param
-          in
-          extend_ctx_with_handler_variables ctx ty hvar_list;
-          entry_binding_context ctx;
-          let param_name = List.map (fun (x, _) -> x) param in
-          extend_ctx_with_parameters ctx ty param_name;
-          ctx.fn_ty <- Some ty
-      | None -> raise Unreachable)
-  | _ -> raise Unreachable
-
-and walk_tydef_phase_2 ctx = function
-  | Enum _ -> ()
-  | Synonym _ -> ()
-  | Record _ -> ()
-
-and walk_eff_phase_2 ctx = function
-  | Eff { name; op; _ } -> (
-      match Scope.lookup_opt ctx.eff_ty_ctx name with
-      | Some ty ->
-          dbg @@ "check " ^ name;
-          report_unresolved_type ty;
-          dbg @@ "check " ^ name ^ " done"
-      | None -> raise Unreachable)
-  | _ -> raise Unreachable
-
-exception NotImplemented
 
 let flatten_eff_sum ty = match unlink ty with TySum tys -> tys | _ -> [ ty ]
 
@@ -353,7 +304,10 @@ and type_of_bind ctx = function
       then (
         Scope.insert ctx.binding_ty_ctx name init_ty;
         TyUnit)
-      else raise @@ Error "inconsistent type of type annotaion and initializer"
+      else
+        raise
+        @@ Error
+             (name ^ "has inconsistent type of type annotaion and initializer")
   | _ -> raise Unreachable
 
 and type_of_expr ctx = function
@@ -379,7 +333,7 @@ and type_of_expr ctx = function
                 match Scope.lookup_opt ctx.eff_ty_ctx s with
                 | Some eff_ty ->
                     if eff_ty == ty then ty
-                    else raise @@ Error "inconsistent effect operation"
+                    else raise @@ Error (s ^ " has inconsistent effect operation")
                 | _ -> raise Unreachable)
             | _ -> raise @@ Error ("unknown effect operation " ^ s))
         | Ordinal _ -> raise NotImplemented
@@ -422,6 +376,55 @@ and type_of_stmts ctx = function
   | x :: xs ->
       let _ = type_of_stmt ctx x in
       type_of_stmts ctx xs
+
+let rec walk_prog_phase_2 ctx = function
+  | Prog [] -> ()
+  | Prog (x :: xs) ->
+      walk_item_phase_2 ctx x;
+      walk_prog_phase_2 ctx (Prog xs)
+
+and walk_item_phase_2 ctx = function
+  | Func _ as f -> walk_func_phase_2 ctx f
+  | TyDef t -> walk_tydef_phase_2 ctx t
+  | Eff _ as e -> walk_eff_phase_2 ctx e
+
+and walk_func_phase_2 ctx = function
+  | Func { name; generic_param; param; ty_ann; body } -> (
+      match Scope.lookup_opt ctx.fn_ty_ctx name with
+      | Some ty ->
+          dbg @@ "check " ^ name;
+          report_unresolved_type ty;
+          dbg @@ "check " ^ name ^ " done";
+          entry_binding_context ctx;
+          let hvar_list =
+            List.filter_map
+              (function HandlerVar (name, _) -> Some name | _ -> None)
+              generic_param
+          in
+          extend_ctx_with_handler_variables ctx ty hvar_list;
+          entry_binding_context ctx;
+          let param_name = List.map (fun (x, _) -> x) param in
+          extend_ctx_with_parameters ctx ty param_name;
+          ctx.fn_ty <- Some ty;
+          let _ = type_of_stmts ctx body in
+          ()
+      | None -> raise Unreachable)
+  | _ -> raise Unreachable
+
+and walk_tydef_phase_2 ctx = function
+  | Enum _ -> ()
+  | Synonym _ -> ()
+  | Record _ -> ()
+
+and walk_eff_phase_2 ctx = function
+  | Eff { name; op; _ } -> (
+      match Scope.lookup_opt ctx.eff_ty_ctx name with
+      | Some ty ->
+          dbg @@ "check " ^ name;
+          report_unresolved_type ty;
+          dbg @@ "check " ^ name ^ " done"
+      | None -> raise Unreachable)
+  | _ -> raise Unreachable
 
 let pipeline prog =
   let ctx = single_level_context in
