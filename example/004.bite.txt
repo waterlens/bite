@@ -7,7 +7,16 @@ effect Pong [a] {
 }
 
 fn pinger [a, Hpi: Ping[a]] () : unit ~ Hpi | a {
-  
+  try {
+    Hpi.ping:[Hpo] ("ping");
+  }
+  with Hpo : Pong[a] {
+    pong [Hpi : Ping[a]] (msg : str) : unit ~ Hpi | a {
+        resume {
+            pinger:[a, Hpi] ();
+        }
+    }
+  }
 }
 
 fn ponger [a, Hpo: Pong[a]] () : unit ~ Hpo | a {

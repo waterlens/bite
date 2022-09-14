@@ -429,5 +429,7 @@ and walk_eff_phase_2 ctx = function
 let pipeline prog =
   let ctx = single_level_context in
   walk_prog_phase_1 ctx prog;
+  show_context ctx;
   fix_type_cross_ref ctx;
+  show_context ctx;
   walk_prog_phase_2 ctx prog

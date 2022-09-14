@@ -18,7 +18,11 @@ type ty =
   | TyEff of ty * ty
   | TyEffOp of ty
 
-and tvar = Generic of int | Link of ty | Named of string [@@deriving show]
+and tvar =
+  | Generic of int
+  | Link of ty [@printer fun fmt _ -> fprintf fmt "<ty>"]
+  | Named of string
+[@@deriving show]
 
 let rec unlink = function
   | TyVar ({ contents = Link ty } as tvar) ->
