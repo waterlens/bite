@@ -24,6 +24,8 @@ and tvar =
   | Named of string
 [@@deriving show]
 
+let rec real = function TyVar { contents = Link ty } -> ty | _ as ty -> ty
+  
 let rec unlink = function
   | TyVar ({ contents = Link ty } as tvar) ->
       let ty = unlink ty in
