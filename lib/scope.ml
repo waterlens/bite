@@ -1,7 +1,7 @@
-type ('a, 'b) scope = ('a, 'b) Hashtbl.t list
-
 exception EmptyScope
 exception NotFound
+
+type ('a, 'b) scope = ('a, 'b) Hashtbl.t list
 
 let rec lookup_opt scope k =
   match scope with

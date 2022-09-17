@@ -21,7 +21,6 @@
   semantic
   lang
   scope
-  trie
   errors
   ))
 

@@ -25,13 +25,6 @@ and tvar =
 [@@deriving show]
 
 let rec real = function TyVar { contents = Link ty } -> ty | _ as ty -> ty
-  
-let rec unlink = function
-  | TyVar ({ contents = Link ty } as tvar) ->
-      let ty = unlink ty in
-      tvar := Link ty;
-      ty
-  | _ as ty -> ty
 
 let lambda_depth_of_ty, lambda_depth_of_ty_list =
   let rec lambda_depth_of_ty_tail acc =

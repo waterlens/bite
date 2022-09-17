@@ -12,7 +12,7 @@ type context = {
   mutable eff_ty_ctx : (string, ty) scope;
   mutable eff_op_to_eff_map : (string, string) scope;
   mutable binding_ty_ctx : (string, ty) scope;
-  mutable fn_ty : ty option;
+  mutable cur_cont_ty : (unit, ty) scope;
 }
 
 let empty_context =
@@ -21,7 +21,7 @@ let empty_context =
     eff_ty_ctx = Scope.empty;
     eff_op_to_eff_map = Scope.empty;
     binding_ty_ctx = Scope.empty;
-    fn_ty = None;
+    cur_cont_ty = Scope.empty;
   }
 
 let dbg = Printf.printf "%s\n"
@@ -305,8 +305,7 @@ and walk_func_phase_2 ctx = function
         | If (cond, t, f) ->
             res_expr cond;
             res_expr @@ BlockExpr t;
-            let _ = Option.map (fun f -> res_expr @@ BlockExpr f) f in
-            ()
+            ignore @@ Option.map (fun f -> res_expr @@ BlockExpr f) f
         | While (cond, body) ->
             res_expr cond;
             res_expr @@ BlockExpr body
@@ -367,38 +366,14 @@ let report_unresolved_type ty =
   let _ = map_named_ty (fun _ s -> raise @@ UnresolvedType s) ty in
   ()
 
-let rec extend_ctx_with_handler_variables ctx ty hvar =
-  let get_cur_hvar _ =
-    match hvar with [] -> raise @@ Error "invalid arguments" | h :: _ -> h
-  in
-  match ty with
-  | TyVar { contents = Link ty } ->
-      extend_ctx_with_handler_variables ctx ty hvar
-  | TyArrow _ -> ()
-  | TyLam ty -> extend_ctx_with_handler_variables ctx ty hvar
-  | TyLabelLam (t1, t2) ->
-      let name = get_cur_hvar () in
-      if Types.is_eff_op_ty t1 then (
-        Scope.insert ctx.binding_ty_ctx name t1;
-        extend_ctx_with_handler_variables ctx t2 (List.tl hvar))
-      else raise @@ Error (name ^ "is not an effect operation type")
-  | _ -> raise @@ Error "unexpected type"
-
-let rec extend_ctx_with_parameters ctx ty params =
-  let extend_ctx t name = Scope.insert ctx.binding_ty_ctx name t in
-  match Types.skip_polymorphism ty with
-  | TyArrow (TyProd params_ty, _) ->
-      List.iter2 (fun ty name -> extend_ctx ty name) params_ty params
-  | _ -> raise @@ Error "not an arrow type"
-
-let flatten_eff_sum ty = match unlink ty with TySum tys -> tys | _ -> [ ty ]
+let flatten_eff_sum ty = match real ty with TySum tys -> tys | _ -> [ ty ]
 
 let combine_param_eff tys =
   let effects = ref [] in
   let tys =
     List.map
       (fun ty ->
-        match unlink ty with
+        match real ty with
         | TyEff (t, eff) ->
             effects := flatten_eff_sum eff;
             t
@@ -407,74 +382,128 @@ let combine_param_eff tys =
   in
   (TyProd tys, !effects)
 
-let rec type_of_stmt ctx = function
+let check_eff_ty_and_op_matched ctx ty name =
+  if Types.is_eff_op_ty ty then
+    match Scope.lookup_opt ctx.eff_op_to_eff_map name with
+    | Some s -> (
+        match Scope.lookup_opt ctx.eff_ty_ctx s with
+        | Some eff_ty ->
+            if eff_ty = ty then ty
+            else raise @@ Error (s ^ " has inconsistent effect operation")
+        | _ -> raise Unreachable)
+    | _ -> raise @@ Error ("unknown effect operation " ^ name)
+  else raise @@ Error "not an effect operation"
+
+let rec check_stmt ctx ty = function
   | Empty -> TyUnit
-  | Ctl ctl -> type_of_ctl ctx ctl
-  | Bind _ as bind -> type_of_bind ctx bind
-  | Expr expr -> type_of_expr ctx expr
+  | Ctl ctl -> check_ctl ctx ty ctl
+  | Bind _ as bind -> check_bind ctx ty bind
+  | Expr expr -> check_expr ctx ty expr
 
-and type_of_ctl ctx = function
-  | If (expr, t, f) -> raise NotImplemented
-  | While (cond, body) -> raise NotImplemented
+and infer_stmt ctx = check_stmt ctx TyHole
+
+and check_ctl ctx _ = function
+  | If (cond, t, f) ->
+      let ct = infer_expr ctx cond in
+      if ct <> TyBool then raise @@ Error "condition must have a bool type"
+      else ignore @@ infer_stmts ctx t;
+      (match f with Some s -> ignore @@ infer_stmts ctx s | _ -> ());
+      TyUnit
+  | While (cond, body) ->
+      let ct = infer_expr ctx cond in
+      if ct <> TyBool then raise @@ Error "condition must have a bool type"
+      else ignore @@ infer_stmts ctx body;
+      TyUnit
   | Resume expr -> TyHole
-  | Try (stmts, eff_handlers) -> TyHole
-  | Ret expr -> raise NotImplemented
+  | Try (stmts, eff_handlers) ->
+      let scoped = scoped_binding_context ctx in
+      let ins name = Scope.insert ctx.binding_ty_ctx name in
+      let bind_gen =
+        List.iter (function HandlerVar (name, ty) -> ins name ty | _ -> ())
+      in
+      let bind_param = List.iter (fun (name, ty) -> ins name ty) in
+      let ins_handler
+          {
+            eff_name;
+            eff_ty_ann;
+            handler_name;
+            handler_ty_ann;
+            handler_generic_param;
+            handler_arg;
+            handler_stmt;
+          } =
+        let eff_ty = real eff_ty_ann in
+        ignore @@ check_eff_ty_and_op_matched ctx eff_ty handler_name;
+        ins eff_name eff_ty;
+        (fun _ ->
+          bind_gen handler_generic_param;
+          (fun _ -> bind_param handler_arg) |> scoped)
+        |> scoped
+      in
+      entry_binding_context ctx;
+      leave_binding_context ctx;
+      TyHole
 
-and type_of_bind ctx = function
-  | Bind { name; ty; init } ->
-      let init_ty = type_of_expr ctx init in
-      if ty == init_ty then (
-        Scope.insert ctx.binding_ty_ctx name init_ty;
-        TyUnit)
-      else
-        raise
-        @@ Error
-             (name ^ "has inconsistent type of type annotaion and initializer")
-  | _ -> raise Unreachable
+and infer_ctl ctx = check_ctl ctx TyHole
 
-and type_of_expr ctx = function
+and check_bind ctx ty =
+  if ty <> TyUnit then
+    raise @@ Error "a bind statement can't return a non-unit value"
+  else function
+    | Bind { name; ty; init } ->
+        let init_ty = check_expr ctx ty init in
+        if ty = init_ty then (
+          Scope.insert ctx.binding_ty_ctx name init_ty;
+          TyUnit)
+        else
+          raise
+          @@ Error
+               (name ^ "has inconsistent type of type annotaion and initializer")
+    | _ -> raise Unreachable
+
+and infer_bind ctx = check_bind ctx TyHole
+
+and check_stmts ctx ty = function
+  | [] -> TyUnit
+  | [ x ] -> check_stmt ctx ty x
+  | x :: xs ->
+      let _ = infer_stmt ctx x in
+      check_stmts ctx ty xs
+
+and infer_stmts ctx = check_stmts ctx TyHole
+
+and check_expr ctx ty = function
   | CallExpr (f, args) ->
-      let fn_ty = type_of_expr ctx f in
-      let args_ty = List.map (fun arg -> unlink @@ type_of_expr ctx arg) args in
-      let arg, a_eff = combine_param_eff args_ty in
+      let fn_ty = infer_expr ctx f in
+      let args_ty = List.map (fun arg -> infer_expr ctx arg) args in
+      let arg, arg_eff = combine_param_eff args_ty in
       let param, ret, f_eff =
-        match unlink fn_ty with
+        match fn_ty with
         | TyArrow (a, r) -> (a, r, [])
         | TyEff (TyArrow (a, r), e) -> (a, r, flatten_eff_sum e)
         | _ -> raise @@ Error "not applicable type"
       in
-      if arg == param then TyEff (ret, TySum (List.append a_eff f_eff))
+      if arg = param then
+        if ty <> TyHole && ty <> ret then
+          raise @@ Error "unexpected return value"
+        else TyEff (ret, TySum (List.append arg_eff f_eff))
       else raise @@ Error "not compatible arguments"
   | FieldExpr (e, field) ->
-      let ty = type_of_expr ctx e in
+      let ty = infer_expr ctx e in
       if Types.is_eff_op_ty ty then
         match field with
-        | Named s -> (
-            match Scope.lookup_opt ctx.eff_op_to_eff_map s with
-            | Some s -> (
-                match Scope.lookup_opt ctx.eff_ty_ctx s with
-                | Some eff_ty ->
-                    if eff_ty == ty then ty
-                    else
-                      raise @@ Error (s ^ " has inconsistent effect operation")
-                | _ -> raise Unreachable)
-            | _ -> raise @@ Error ("unknown effect operation " ^ s))
-        | Ordinal _ -> raise NotImplemented
-      else raise NotImplemented
-  | BinaryExpr (_, _, _) -> raise NotImplemented
-  | UnaryExpr (_, _) -> raise NotImplemented
+        | Named s -> check_eff_ty_and_op_matched ctx ty s
+        | Ordinal _ -> raise NotImplemented (* destruct tuple *)
+      else raise NotImplemented (* get record field *)
   | Literal l -> (
       l |> function
       | StringLiteral _ -> TyStr
       | FloatLiteral _ -> TyFloat
       | IntLiteral _ -> TyInt
       | BoolLiteral _ -> TyBool)
-  | ArrayExpr _ -> raise NotImplemented
-  | IndexExpr (_, _) -> raise NotImplemented
-  | TupleExpr _ -> raise NotImplemented
   | BlockExpr blk ->
       entry_binding_context ctx;
-      let ty = type_of_stmts ctx blk in
+      let ty = infer_stmts ctx blk in
       leave_binding_context ctx;
       ty
   | VarExpr name -> (
@@ -484,15 +513,15 @@ and type_of_expr ctx = function
           raise @@ Error ("unable to find name " ^ name ^ " in current context")
       )
   | GenericExpr (e, tys) ->
-      let ty = type_of_expr ctx e in
+      let ty = infer_expr ctx e in
       Types.apply ty tys
+  | BinaryExpr (_, _, _) -> raise NotImplemented
+  | UnaryExpr (_, _) -> raise NotImplemented
+  | ArrayExpr _ -> raise NotImplemented
+  | IndexExpr (_, _) -> raise NotImplemented
+  | TupleExpr _ -> raise NotImplemented
 
-and type_of_stmts ctx = function
-  | [] -> TyUnit
-  | [ x ] -> type_of_stmt ctx x
-  | x :: xs ->
-      let _ = type_of_stmt ctx x in
-      type_of_stmts ctx xs
+and infer_expr ctx = check_expr ctx TyHole
 
 let rec walk_prog_phase_3 ctx = function
   | Prog [] -> ()
@@ -506,26 +535,29 @@ and walk_item_phase_3 ctx = function
   | Eff _ as e -> walk_eff_phase_2 ctx e
 
 and walk_func_phase_3 ctx = function
-  | Func { name; generic_param; param; ty_ann; body } -> (
-      match Scope.lookup_opt ctx.fn_ty_ctx name with
-      | Some ty ->
-          dbg @@ "check " ^ name;
-          report_unresolved_type ty;
-          dbg @@ "check " ^ name ^ " done";
-          entry_binding_context ctx;
-          let hvar_list =
-            List.filter_map
-              (function HandlerVar (name, _) -> Some name | _ -> None)
-              generic_param
-          in
-          extend_ctx_with_handler_variables ctx ty hvar_list;
-          entry_binding_context ctx;
-          let param_name = List.map (fun (x, _) -> x) param in
-          extend_ctx_with_parameters ctx ty param_name;
-          ctx.fn_ty <- Some ty;
-          let _ = type_of_stmts ctx body in
-          ()
-      | None -> raise Unreachable)
+  | Func { name; generic_param; param; ty_ann; body } ->
+      let scoped = scoped_binding_context ctx in
+      let ins name = Scope.insert ctx.binding_ty_ctx name in
+      let ft = Scope.lookup ctx.fn_ty_ctx name in
+      let rt = ty_annotation_to_ty ty_ann in
+      let bind_gen =
+        List.iter (function HandlerVar (name, ty) -> ins name ty | _ -> ())
+      in
+      let bind_param = List.iter (fun (name, ty) -> ins name ty) in
+      (fun _ ->
+        (* allow recursive function *)
+        ins name ft;
+        (fun _ ->
+          bind_gen generic_param;
+          (fun _ ->
+            bind_param param;
+            (fun _ ->
+              let _ = check_stmts ctx rt body in
+              ())
+            |> scoped)
+          |> scoped)
+        |> scoped)
+      |> scoped
   | _ -> raise Unreachable
 
 and walk_tydef_phase_3 ctx = function
@@ -533,15 +565,7 @@ and walk_tydef_phase_3 ctx = function
   | Synonym _ -> ()
   | Record _ -> ()
 
-and walk_eff_phase_3 ctx = function
-  | Eff { name; op; _ } -> (
-      match Scope.lookup_opt ctx.eff_ty_ctx name with
-      | Some ty ->
-          dbg @@ "check " ^ name;
-          report_unresolved_type ty;
-          dbg @@ "check " ^ name ^ " done"
-      | None -> raise Unreachable)
-  | _ -> raise Unreachable
+and walk_eff_phase_3 ctx = function Eff _ -> () | _ -> raise Unreachable
 
 let fix_type_cross_ref ctx =
   let lookup_opt = lookup_in_type_ctx ctx in
@@ -567,5 +591,4 @@ let pipeline prog =
   fix_type_cross_ref ctx;
   walk_prog_phase_2 ctx prog;
   show_context ctx;
-  Printf.printf "%s\n" @@ show_prog prog;
-  walk_prog_phase_3 ctx prog
+  Printf.printf "%s\n" @@ show_prog prog
