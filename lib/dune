@@ -11,6 +11,7 @@
 
 (library
  (name bite)
+ (libraries llvm)
  (preprocess (pps ppx_deriving.show ppx_deriving.ord))
  (modules
   lexer
@@ -19,7 +20,7 @@
   syntax
   types
   semantic
-  lang
+  cir
   scope
   errors
   ))

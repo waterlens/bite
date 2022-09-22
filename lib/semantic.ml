@@ -378,27 +378,31 @@ and walk_tydef_phase_2 _ = function
 
 and walk_eff_phase_2 _ = function Eff _ -> () | _ -> raise Unreachable
 
-let rec walk_prog_phase_3 ctx = function
+type cgctx = {
+  types: Llvm.lltype
+}
+
+let rec codegen_prog ctx = function
   | Prog [] -> ()
   | Prog (x :: xs) ->
-      walk_item_phase_2 ctx x;
-      walk_prog_phase_2 ctx (Prog xs)
+      codegen_item ctx x;
+      codegen_prog ctx (Prog xs)
 
-and walk_item_phase_3 ctx = function
-  | Func _ as f -> walk_func_phase_2 ctx f
-  | TyDef t -> walk_tydef_phase_2 ctx t
-  | Eff _ as e -> walk_eff_phase_2 ctx e
+and codegen_item ctx = function
+  | Func _ as f -> codegen_func ctx f
+  | TyDef t -> codegen_tydef ctx t
+  | Eff _ as e -> codegen_eff ctx e
 
-and walk_func_phase_3 ctx = function
+and codegen_func ctx = function
   | Func { name; generic_param; param; ty_ann; body } -> ()
   | _ -> raise Unreachable
 
-and walk_tydef_phase_3 ctx = function
-  | Enum _ -> ()
+and codegen_tydef ctx = function
+  | Enum { name; _ } -> ()
   | Synonym _ -> ()
   | Record _ -> ()
 
-and walk_eff_phase_3 ctx = function Eff _ -> () | _ -> raise Unreachable
+and codegen_eff ctx = function Eff _ -> () | _ -> raise Unreachable
 
 let fix_type_cross_ref ctx =
   let lookup_opt = lookup_in_type_ctx ctx in
@@ -409,10 +413,7 @@ let fix_type_cross_ref ctx =
         tv
     | None -> tv
   in
-  let fix_tbl_item _ ty =
-    let _ = Types.map_named_ty mk_cross_ref ty in
-    ()
-  in
+  let fix_tbl_item _ ty = ignore @@ Types.map_named_ty mk_cross_ref ty in
   let fix_single tbl = Hashtbl.iter fix_tbl_item tbl in
   let fix_ctx ctx = List.iter fix_single ctx in
   fix_ctx ctx.fn_ty_ctx;
@@ -424,4 +425,5 @@ let pipeline prog =
   walk_prog_phase_1 ctx prog;
   fix_type_cross_ref ctx;
   walk_prog_phase_2 ctx prog;
-  show_context ctx
+  show_context ctx;
+  codegen_prog ctx prog
