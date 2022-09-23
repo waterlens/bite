@@ -101,6 +101,8 @@ let branch_among cvar blk1 blk2 blk3 =
 
 let move_to ctx blk = ctx.pos <- blk
 
+exception NotImplemented
+
 let rec build_expr ctx =
   let build_expr_with_cur_ctx x = build_expr ctx x in
   function
@@ -116,16 +118,16 @@ let rec build_expr ctx =
   | Syntax.CallExpr (VarExpr name, args) ->
       let func = Scope.lookup ctx.fn_ctx name in
       `Insn (Call (func, List.map build_expr_with_cur_ctx args))
-  | Syntax.CallExpr (GenericExpr (e, tys), args) -> `Imm 0
-  | Syntax.CallExpr (e, args) -> `Imm 0
-  | Syntax.FieldExpr (e, field) -> `Imm 0
+  | Syntax.CallExpr (GenericExpr (e, tys), args) -> raise NotImplemented
+  | Syntax.CallExpr (e, args) -> raise NotImplemented
+  | Syntax.FieldExpr (e, field) -> raise NotImplemented
   | Syntax.IndexExpr (e1, e2) ->
       `Insn (ExtractArrayElement (build_expr ctx e1, build_expr ctx e2))
   | Syntax.TupleExpr fields ->
       `Insn (MakeTuple (List.map build_expr_with_cur_ctx fields))
   | BlockExpr stmts -> build_block_expr ctx stmts
-  | VarExpr name -> `Imm 0
-  | GenericExpr (e, tys) -> `Imm 0
+  | VarExpr name -> `Var (Scope.lookup ctx.var_ctx name)
+  | GenericExpr (e, tys) -> raise NotImplemented
 
 and build_block_expr ctx =
   ignore @@ entry_scope ctx;
