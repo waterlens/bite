@@ -19,7 +19,10 @@ let run file =
   Lexing.set_filename buf file;
   try
     let prog = Parser.entry Lexer.tokenize buf in
-    Semantic.pipeline prog
+    let ctx, prog = Semantic.pipeline prog in
+    let cir = Cir.make_cir ctx prog in
+    Printf.printf "%s" @@ Cir.show_cir cir;
+    ()
   with
   | Parser.Error ->
       Printf.eprintf "Parser failed: %a\n%!" print_pos (lexeme_start_p buf)
@@ -33,4 +36,5 @@ let rec runs file_list =
       run x;
       runs xs
 
-let () = runs !inputs
+let _ = Printexc.record_backtrace true
+let _ = runs !inputs

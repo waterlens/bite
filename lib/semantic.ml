@@ -378,32 +378,6 @@ and walk_tydef_phase_2 _ = function
 
 and walk_eff_phase_2 _ = function Eff _ -> () | _ -> raise Unreachable
 
-type cgctx = {
-  types: Llvm.lltype
-}
-
-let rec codegen_prog ctx = function
-  | Prog [] -> ()
-  | Prog (x :: xs) ->
-      codegen_item ctx x;
-      codegen_prog ctx (Prog xs)
-
-and codegen_item ctx = function
-  | Func _ as f -> codegen_func ctx f
-  | TyDef t -> codegen_tydef ctx t
-  | Eff _ as e -> codegen_eff ctx e
-
-and codegen_func ctx = function
-  | Func { name; generic_param; param; ty_ann; body } -> ()
-  | _ -> raise Unreachable
-
-and codegen_tydef ctx = function
-  | Enum { name; _ } -> ()
-  | Synonym _ -> ()
-  | Record _ -> ()
-
-and codegen_eff ctx = function Eff _ -> () | _ -> raise Unreachable
-
 let fix_type_cross_ref ctx =
   let lookup_opt = lookup_in_type_ctx ctx in
   let mk_cross_ref tv name =
@@ -425,5 +399,4 @@ let pipeline prog =
   walk_prog_phase_1 ctx prog;
   fix_type_cross_ref ctx;
   walk_prog_phase_2 ctx prog;
-  show_context ctx;
-  codegen_prog ctx prog
+  (ctx, prog)
