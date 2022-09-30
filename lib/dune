@@ -21,6 +21,7 @@
   types
   semantic
   cir
+  codegen
   scope
   errors
   ))
