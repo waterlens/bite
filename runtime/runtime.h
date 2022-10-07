@@ -7,6 +7,7 @@ enum object_kind {
   Tagged,
   Closure,
   Array,
+  Int64,
 };
 
 #define packed_struct struct __attribute__((packed))
@@ -56,3 +57,9 @@ typedef packed_struct tuple {
   void *elements[];
 }
 tuple;
+
+typedef packed_struct i64 {
+  object header;
+  uint64_t data;
+}
+i64;

@@ -46,3 +46,10 @@ void *extract_tagged_field(tagged *t, size_t tag, size_t n) {
     runtime_panic("extraction overflow");
   return t->elements[n];
 }
+
+i64 *create_boxed_i64(uint64_t value) {
+  i64 *p = GC_MALLOC(sizeof(i64));
+  p->header.kind = Int64;
+  p->data = value;
+  return p;
+}
