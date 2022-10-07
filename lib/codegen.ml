@@ -23,36 +23,13 @@ let rec cty_to_lty = function
   | TyBool -> RawBool
   | TyStr -> String
   | TyProd tys -> Tuple (List.map cty_to_lty tys)
+  | TyRecord tys -> Tuple (List.map (fun (_, ty) -> cty_to_lty ty) tys)
   | TyEnum _ -> Tagged
   | TyArray ty -> Array (cty_to_lty ty)
   | TyArrow _ -> Closure
   | TyVar { contents = Link _ } -> Opaque
   | TyHole -> Opaque
   | _ as t -> raise @@ UnsupportedType (Types.show_ty t)
-
-let insert_types ctx =
-  let i8 = i8_type ctx in
-  let any_ptr = pointer_type i8 in
-  let i64 = i64_type ctx in
-  let i32 = i32_type ctx in
-  let obj = named_struct_type ctx "_object" in
-  struct_set_body obj [| i64 |] true;
-  let string = named_struct_type ctx "_string" in
-  struct_set_body string [| obj; i32; array_type i8 0 |] true;
-  let array = named_struct_type ctx "_array" in
-  struct_set_body array [| obj; i32; any_ptr; i32 |] true;
-  let closure = named_struct_type ctx "_closure" in
-  struct_set_body closure [| obj; i32; any_ptr; any_ptr |] true;
-  let tuple = named_struct_type ctx "_tuple" in
-  struct_set_body tuple [| obj; i32; array_type any_ptr 0 |] true;
-  let tagged = named_struct_type ctx "_enum" in
-  struct_set_body tagged [| obj; i32; any_ptr |] true
-
-let string ctx = named_struct_type ctx "_string"
-let array ctx = named_struct_type ctx "_array"
-let closure ctx = named_struct_type ctx "_closure"
-let tuple ctx = named_struct_type ctx "_tuple"
-let tagged ctx = named_struct_type ctx "_tagged"
 
 let rec lty_to_llty ctx = function
   | Unit -> i1_type ctx
@@ -62,10 +39,10 @@ let rec lty_to_llty ctx = function
   | RawF64 -> double_type ctx
   | RawBool -> i1_type ctx
   | String -> double_type ctx
-  | Array _ -> array ctx
-  | Tuple _ -> tuple ctx
-  | Tagged -> tagged ctx
-  | Closure -> closure ctx
+  | Array _ -> Runtime.array ctx
+  | Tuple _ -> Runtime.tuple ctx
+  | Tagged -> Runtime.tagged ctx
+  | Closure -> Runtime.closure ctx
   | Opaque -> pointer_type @@ i8_type ctx
 
 let cty_to_llty ctx ty = cty_to_lty ty |> lty_to_llty ctx
@@ -224,7 +201,12 @@ let codegen =
               | Integer -> build_neg v "" bd
               | Double -> build_fneg v "" bd
               | _ -> raise NotImplemented))
-      | _ -> raise NotImplemented
+      | Cir.MakeTuple fields -> raise NotImplemented
+      | Cir.MakeTaggedTuple (n, fields) -> raise NotImplemented
+      | Cir.MakeArray elems -> raise NotImplemented
+      | Cir.ExtractArrayElement (arr, n) -> raise NotImplemented
+      | Cir.ExtractTupleField (tp, n) -> raise NotImplemented
+      | Cir.Intrinsic _ -> raise NotImplemented
     in
 
     let emit_stmts cirblk llblk =

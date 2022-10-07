@@ -1,0 +1,14 @@
+enum Color {
+  Red
+  Yellow
+  Blue
+}
+
+enum OptColor {
+  Some(Color)
+  None 
+}
+
+fn main(): int {
+    let _: OptColor = Some(Blue);
+}

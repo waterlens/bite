@@ -102,6 +102,32 @@ let branch_among cvar blk1 blk2 blk3 =
 let move_to ctx blk = ctx.pos <- blk
 
 exception NotImplemented
+exception Unreachable
+exception Error of string
+
+let ctor_or_func { ty_ctx; _ } name =
+  let Semantic.{ ctor_to_tag_map; _ } = ty_ctx in
+  match Scope.lookup_opt ctor_to_tag_map name with
+  | Some i -> `NthCtor i
+  | None -> `Func
+
+let ctor_or_local { var_ctx; ty_ctx; _ } name =
+  let Semantic.{ ctor_to_tag_map; _ } = ty_ctx in
+  match Scope.lookup_opt var_ctx name with
+  | Some v -> `Local v
+  | None -> (
+      match Scope.lookup_opt ctor_to_tag_map name with
+      | Some i -> `NthCtor i
+      | None -> `Neither)
+
+let field_or_effop { ty_ctx; _ } name =
+  let Semantic.{ field_to_index_map; eff_op_to_eff_map; _ } = ty_ctx in
+  match Scope.lookup_opt field_to_index_map name with
+  | Some i -> `NthField i
+  | None -> (
+      match Scope.lookup_opt eff_op_to_eff_map name with
+      | Some eff -> `EffOp (name, eff)
+      | None -> `Neither)
 
 let rec build_expr ctx =
   let build_expr_with_cur_ctx x = build_expr ctx x in
@@ -116,18 +142,35 @@ let rec build_expr ctx =
   | Syntax.ArrayExpr elems ->
       `Insn (MakeArray (List.map build_expr_with_cur_ctx elems))
   | Syntax.CallExpr (VarExpr name, args) ->
-      let func = Scope.lookup ctx.fn_ctx name in
-      `Insn (Call (func, List.map build_expr_with_cur_ctx args))
+      build_call_or_ctor_expr ctx name args
   | Syntax.CallExpr (GenericExpr (e, tys), args) -> raise NotImplemented
-  | Syntax.CallExpr (e, args) -> raise NotImplemented
-  | Syntax.FieldExpr (e, field) -> raise NotImplemented
+  | Syntax.CallExpr _ ->
+      raise NotImplemented (* Do not allow other forms of call expression *)
+  | Syntax.FieldExpr (e, field) -> (
+      let e = build_expr_with_cur_ctx e in
+      match field with
+      | Syntax.Ordinal n -> `Insn (ExtractTupleField (e, n))
+      | _ -> raise NotImplemented)
   | Syntax.IndexExpr (e1, e2) ->
       `Insn (ExtractArrayElement (build_expr ctx e1, build_expr ctx e2))
   | Syntax.TupleExpr fields ->
       `Insn (MakeTuple (List.map build_expr_with_cur_ctx fields))
   | BlockExpr stmts -> build_block_expr ctx stmts
-  | VarExpr name -> `Var (Scope.lookup ctx.var_ctx name)
-  | GenericExpr (e, tys) -> raise NotImplemented
+  | VarExpr name -> build_var_or_ctor_expr ctx name
+  | GenericExpr _ -> raise NotImplemented
+
+and build_call_or_ctor_expr ctx name args =
+  match ctor_or_func ctx name with
+  | `Func ->
+      let func = Scope.lookup ctx.fn_ctx name in
+      `Insn (Call (func, List.map (build_expr ctx) args))
+  | `NthCtor n -> `Insn (MakeTaggedTuple (n, List.map (build_expr ctx) args))
+
+and build_var_or_ctor_expr ctx name =
+  match ctor_or_local ctx name with
+  | `Local v -> `Var v
+  | `NthCtor n -> `Insn (MakeTaggedTuple (n, []))
+  | `Neither -> raise @@ Error "not a variable or a constructor"
 
 and build_block_expr ctx =
   ignore @@ entry_scope ctx;
@@ -372,11 +415,22 @@ and show_cir_insn = function
         (show_cir_value v2)
   | UnaryOp (op, v) ->
       Printf.sprintf "%s (%s)" (show_cir_unary_op op) (show_cir_value v)
-  | MakeTuple elems -> "make_tuple"
-  | MakeTaggedTuple (tag, elems) -> "make_tagged_tuple"
-  | MakeArray elems -> "make_array"
-  | ExtractTupleField (v, nth) -> "extract_field"
-  | ExtractArrayElement (v, nth) -> "extract_element"
+  | MakeTuple elems ->
+      Printf.sprintf "make_tuple (%s)"
+      @@ String.concat ","
+      @@ List.map show_cir_value elems
+  | MakeTaggedTuple (tag, elems) ->
+      Printf.sprintf "make_tagged_tuple %d: (%s)" tag
+      @@ String.concat ","
+      @@ List.map show_cir_value elems
+  | MakeArray elems ->
+      Printf.sprintf "make_array (%s)"
+      @@ String.concat ","
+      @@ List.map show_cir_value elems
+  | ExtractTupleField (v, nth) ->
+      Printf.sprintf "extract %s [%d]" (show_cir_value v) nth
+  | ExtractArrayElement (v, nth) ->
+      Printf.sprintf "extract %s [%s]" (show_cir_value v) @@ show_cir_value nth
   | Intrinsic (name, args) ->
       Printf.sprintf "!%s (%s)" name
       @@ String.concat ","

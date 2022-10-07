@@ -6,12 +6,16 @@ open Types
 exception Unreachable
 exception NotImplemented
 exception UnresolvedType of string
+exception DuplicateConstructor
+exception DuplicateField
 
 type context = {
   mutable fn_ty_ctx : (string, ty) scope;
   mutable data_ty_ctx : (string, ty) scope;
   mutable eff_ty_ctx : (string, ty) scope;
   mutable eff_op_to_eff_map : (string, string) scope;
+  mutable field_to_index_map : (string, int) scope;
+  mutable ctor_to_tag_map : (string, int) scope;
   mutable binding_ty_ctx : (string, ty) scope;
   mutable cur_cont_ty : (unit, ty) scope;
 }
@@ -22,6 +26,8 @@ let empty_context =
     data_ty_ctx = Scope.empty;
     eff_ty_ctx = Scope.empty;
     eff_op_to_eff_map = Scope.empty;
+    field_to_index_map = Scope.empty;
+    ctor_to_tag_map = Scope.empty;
     binding_ty_ctx = Scope.empty;
     cur_cont_ty = Scope.empty;
   }
@@ -51,6 +57,8 @@ let show_context ctx =
   print_scope ctx.eff_ty_ctx id show_ty;
   dbg "eff_op_to_eff_map:";
   print_scope ctx.eff_op_to_eff_map id id;
+  dbg "field_to_index_map:";
+  print_scope ctx.field_to_index_map id string_of_int;
   dbg "binding_ty_ctx:";
   print_scope ctx.binding_ty_ctx id show_ty;
   ()
@@ -59,6 +67,8 @@ let entry_context ctx =
   ctx.fn_ty_ctx <- Scope.entry ctx.fn_ty_ctx;
   ctx.eff_ty_ctx <- Scope.entry ctx.eff_ty_ctx;
   ctx.eff_op_to_eff_map <- Scope.entry ctx.eff_op_to_eff_map;
+  ctx.field_to_index_map <- Scope.entry ctx.field_to_index_map;
+  ctx.ctor_to_tag_map <- Scope.entry ctx.ctor_to_tag_map;
   ctx.binding_ty_ctx <- Scope.entry ctx.binding_ty_ctx;
   ctx.data_ty_ctx <- Scope.entry ctx.data_ty_ctx
 
@@ -198,6 +208,10 @@ let enum_type generic_param ctors =
   let t = TyEnum ctors in
   bind_simple_generic_parameters_inplace 0 generic_param t
 
+let record_type generic_param fields =
+  let t = TyRecord fields in
+  bind_simple_generic_parameters_inplace 0 generic_param t
+
 (* In the phase 1, we build the types*)
 let rec walk_prog_phase_1 ctx = function
   | Prog [] -> ()
@@ -220,11 +234,26 @@ and walk_func_phase_1 ctx = function
 
 and walk_tydef_phase_1 ctx = function
   | Enum e ->
+      List.iteri
+        (fun i ctor ->
+          match Scope.lookup_opt ctx.ctor_to_tag_map ctor.ctor_name with
+          | Some _ -> raise DuplicateConstructor
+          | None -> Scope.insert ctx.ctor_to_tag_map ctor.ctor_name i)
+        e.ctors;
       let et = enum_type e.generic_param e.ctors in
       Scope.insert ctx.data_ty_ctx e.name et;
       ()
-  | Record _ -> ()
-  | Synonym _ -> ()
+  | Record r ->
+      List.iteri
+        (fun i (field, _) ->
+          match Scope.lookup_opt ctx.field_to_index_map field with
+          | Some _ -> raise DuplicateField
+          | None -> Scope.insert ctx.field_to_index_map field i)
+        r.fields;
+      let rt = record_type r.generic_param r.fields in
+      Scope.insert ctx.data_ty_ctx r.name rt;
+      ()
+  | Synonym _ -> raise NotImplemented
 
 and walk_eff_phase_1 ctx = function
   | Eff { name; generic_param; op } ->
@@ -279,7 +308,7 @@ and walk_item_phase_2 ctx = function
   | Eff _ as e -> walk_eff_phase_2 ctx e
 
 and walk_func_phase_2 ctx = function
-  | Func { name; generic_param; param; ty_ann; body } ->
+  | Func { generic_param; param; ty_ann; body; _ } ->
       let scoped f = scoped_binding_context ctx f in
       let f = lookup_in_type_and_binding_ctx ctx in
       let res = resolve_type_inplace f in

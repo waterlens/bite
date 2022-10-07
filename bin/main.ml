@@ -21,8 +21,8 @@ let run file =
     let prog = Parser.entry Lexer.tokenize buf in
     let ctx, prog = Semantic.pipeline prog in
     let cir = Cir.make_cir ctx prog in
-    let m = Codegen.codegen cir in
     Printf.printf "%s" @@ Cir.show_cir cir;
+    let m = Codegen.codegen cir in
     Printf.printf "%s" @@ Llvm.string_of_llmodule m;
     ()
   with

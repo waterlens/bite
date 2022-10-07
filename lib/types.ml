@@ -8,6 +8,7 @@ type ty =
   | TyApp of ty * ty list
   | TyProd of ty list
   | TySum of ty list
+  | TyRecord of (string * ty) list (* labeled *)
   | TyEnum of (string * ty) list (* labeled *)
   | TyArrow of ty * ty
   | TyArray of ty
@@ -34,6 +35,8 @@ let lambda_depth_of_ty, lambda_depth_of_ty_list =
     | TyApp (t, ts) -> max (ld acc t) (lds acc ts)
     | TyProd ts -> lds acc ts
     | TySum ts -> lds acc ts
+    | TyRecord fds ->
+        List.fold_left (fun acc (_, ty) -> max acc (ld acc ty)) 0 fds
     | TyEnum nts ->
         List.fold_left (fun acc (_, ty) -> max acc (ld acc ty)) 0 nts
     | TyArrow (t1, t2) -> max (ld acc t1) (ld acc t2)
@@ -56,6 +59,7 @@ let rec map_ty_var f =
   | TyApp (t, ts) -> TyApp (f1 t, f2 ts)
   | TyProd ts -> TyProd (f2 ts)
   | TySum ts -> TySum (f2 ts)
+  | TyRecord fds -> TyRecord (List.map (fun (x, y) -> (x, f1 y)) fds)
   | TyEnum nts -> TyEnum (List.map (fun (x, y) -> (x, f1 y)) nts)
   | TyArrow (t1, t2) -> TyArrow (f1 t1, f1 t2)
   | TyArray t -> TyArray (f1 t)
