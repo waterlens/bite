@@ -9,6 +9,7 @@ target triple = "x86_64-pc-linux-gnu"
 %struct.closure = type { %struct.object, i8*, i8* }
 %struct.tagged = type { %struct.object, i32, i32, [0 x i8*] }
 %struct.tuple = type { %struct.object, i32, i32, [0 x i8*] }
+%struct.i64 = type { %struct.object, i64 }
 
 @.str = private unnamed_addr constant [37 x i8] c"the number of tuple fields exceeds 8\00", align 1
 @.str.1 = private unnamed_addr constant [20 x i8] c"extraction overflow\00", align 1
@@ -35,7 +36,7 @@ declare void @exit(i32 noundef) local_unnamed_addr #3
 
 ; Function Attrs: nounwind sspstrong uwtable
 define dso_local noalias %struct.tuple* @alloc_tuple(i64 noundef %0) local_unnamed_addr #4 {
-  %2 = icmp ugt i64 %0, 8
+  %2 = icmp ugt i64 %0, 4
   br i1 %2, label %3, label %5
 
 3:                                                ; preds = %1
@@ -59,6 +60,84 @@ define dso_local noalias %struct.tuple* @alloc_tuple(i64 noundef %0) local_unnam
 
 ; Function Attrs: allocsize(0)
 declare noalias i8* @GC_malloc(i64 noundef) local_unnamed_addr #5
+
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tuple* @make_tuple_1(%struct.object* noundef %0) local_unnamed_addr #4 {
+  %2 = tail call noalias i8* @GC_malloc(i64 noundef 24) #9
+  %3 = bitcast i8* %2 to %struct.tuple*
+  %4 = getelementptr inbounds i8, i8* %2, i64 4
+  store i8 2, i8* %4, align 1, !tbaa !5
+  %5 = getelementptr inbounds i8, i8* %2, i64 8
+  %6 = bitcast i8* %5 to i32*
+  store i32 1, i32* %6, align 1, !tbaa !11
+  %7 = getelementptr inbounds i8, i8* %2, i64 16
+  %8 = bitcast i8* %7 to %struct.object**
+  store %struct.object* %0, %struct.object** %8, align 1, !tbaa !12
+  ret %struct.tuple* %3
+}
+
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tuple* @make_tuple_2(%struct.object* noundef %0, %struct.object* noundef %1) local_unnamed_addr #4 {
+  %3 = tail call noalias i8* @GC_malloc(i64 noundef 24) #9
+  %4 = bitcast i8* %3 to %struct.tuple*
+  %5 = getelementptr inbounds i8, i8* %3, i64 4
+  store i8 2, i8* %5, align 1, !tbaa !5
+  %6 = getelementptr inbounds i8, i8* %3, i64 8
+  %7 = bitcast i8* %6 to i32*
+  store i32 1, i32* %7, align 1, !tbaa !11
+  %8 = getelementptr inbounds i8, i8* %3, i64 16
+  %9 = bitcast i8* %8 to %struct.object**
+  store %struct.object* %0, %struct.object** %9, align 1, !tbaa !12
+  %10 = getelementptr inbounds i8, i8* %3, i64 24
+  %11 = bitcast i8* %10 to %struct.object**
+  store %struct.object* %1, %struct.object** %11, align 1, !tbaa !12
+  ret %struct.tuple* %4
+}
+
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tuple* @make_tuple_3(%struct.object* noundef %0, %struct.object* noundef %1, %struct.object* noundef %2) local_unnamed_addr #4 {
+  %4 = tail call noalias i8* @GC_malloc(i64 noundef 24) #9
+  %5 = bitcast i8* %4 to %struct.tuple*
+  %6 = getelementptr inbounds i8, i8* %4, i64 4
+  store i8 2, i8* %6, align 1, !tbaa !5
+  %7 = getelementptr inbounds i8, i8* %4, i64 8
+  %8 = bitcast i8* %7 to i32*
+  store i32 1, i32* %8, align 1, !tbaa !11
+  %9 = getelementptr inbounds i8, i8* %4, i64 16
+  %10 = bitcast i8* %9 to %struct.object**
+  store %struct.object* %0, %struct.object** %10, align 1, !tbaa !12
+  %11 = getelementptr inbounds i8, i8* %4, i64 24
+  %12 = bitcast i8* %11 to %struct.object**
+  store %struct.object* %1, %struct.object** %12, align 1, !tbaa !12
+  %13 = getelementptr inbounds i8, i8* %4, i64 32
+  %14 = bitcast i8* %13 to %struct.object**
+  store %struct.object* %2, %struct.object** %14, align 1, !tbaa !12
+  ret %struct.tuple* %5
+}
+
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tuple* @make_tuple_4(%struct.object* noundef %0, %struct.object* noundef %1, %struct.object* noundef %2, %struct.object* noundef %3) local_unnamed_addr #4 {
+  %5 = tail call noalias i8* @GC_malloc(i64 noundef 24) #9
+  %6 = bitcast i8* %5 to %struct.tuple*
+  %7 = getelementptr inbounds i8, i8* %5, i64 4
+  store i8 2, i8* %7, align 1, !tbaa !5
+  %8 = getelementptr inbounds i8, i8* %5, i64 8
+  %9 = bitcast i8* %8 to i32*
+  store i32 1, i32* %9, align 1, !tbaa !11
+  %10 = getelementptr inbounds i8, i8* %5, i64 16
+  %11 = bitcast i8* %10 to %struct.object**
+  store %struct.object* %0, %struct.object** %11, align 1, !tbaa !12
+  %12 = getelementptr inbounds i8, i8* %5, i64 24
+  %13 = bitcast i8* %12 to %struct.object**
+  store %struct.object* %1, %struct.object** %13, align 1, !tbaa !12
+  %14 = getelementptr inbounds i8, i8* %5, i64 32
+  %15 = bitcast i8* %14 to %struct.object**
+  store %struct.object* %2, %struct.object** %15, align 1, !tbaa !12
+  %16 = getelementptr inbounds i8, i8* %5, i64 40
+  %17 = bitcast i8* %16 to %struct.object**
+  store %struct.object* %3, %struct.object** %17, align 1, !tbaa !12
+  ret %struct.tuple* %6
+}
 
 ; Function Attrs: mustprogress nofree norecurse nosync nounwind readonly sspstrong uwtable willreturn
 define dso_local i64 @get_tuple_size(%struct.tuple* nocapture noundef readonly %0) local_unnamed_addr #6 {
@@ -116,6 +195,116 @@ define dso_local noalias %struct.tagged* @alloc_tagged(i64 noundef %0, i64 nound
 }
 
 ; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tagged* @make_tagged_0(i64 noundef %0) local_unnamed_addr #4 {
+  %2 = tail call noalias i8* @GC_malloc(i64 noundef 24) #9
+  %3 = bitcast i8* %2 to %struct.tagged*
+  %4 = getelementptr inbounds i8, i8* %2, i64 4
+  store i8 2, i8* %4, align 1, !tbaa !5
+  %5 = trunc i64 %0 to i32
+  %6 = getelementptr inbounds i8, i8* %2, i64 8
+  %7 = bitcast i8* %6 to i32*
+  store i32 %5, i32* %7, align 1, !tbaa !11
+  %8 = getelementptr inbounds i8, i8* %2, i64 12
+  %9 = bitcast i8* %8 to i32*
+  store i32 1, i32* %9, align 1, !tbaa !11
+  ret %struct.tagged* %3
+}
+
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tagged* @make_tagged_1(i64 noundef %0, %struct.object* noundef %1) local_unnamed_addr #4 {
+  %3 = tail call noalias i8* @GC_malloc(i64 noundef 24) #9
+  %4 = bitcast i8* %3 to %struct.tagged*
+  %5 = getelementptr inbounds i8, i8* %3, i64 4
+  store i8 2, i8* %5, align 1, !tbaa !5
+  %6 = trunc i64 %0 to i32
+  %7 = getelementptr inbounds i8, i8* %3, i64 8
+  %8 = bitcast i8* %7 to i32*
+  store i32 %6, i32* %8, align 1, !tbaa !11
+  %9 = getelementptr inbounds i8, i8* %3, i64 12
+  %10 = bitcast i8* %9 to i32*
+  store i32 1, i32* %10, align 1, !tbaa !11
+  %11 = getelementptr inbounds i8, i8* %3, i64 16
+  %12 = bitcast i8* %11 to %struct.object**
+  store %struct.object* %1, %struct.object** %12, align 1, !tbaa !12
+  ret %struct.tagged* %4
+}
+
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tagged* @make_tagged_2(i64 noundef %0, %struct.object* noundef %1, %struct.object* noundef %2) local_unnamed_addr #4 {
+  %4 = tail call noalias i8* @GC_malloc(i64 noundef 32) #9
+  %5 = bitcast i8* %4 to %struct.tagged*
+  %6 = getelementptr inbounds i8, i8* %4, i64 4
+  store i8 2, i8* %6, align 1, !tbaa !5
+  %7 = trunc i64 %0 to i32
+  %8 = getelementptr inbounds i8, i8* %4, i64 8
+  %9 = bitcast i8* %8 to i32*
+  store i32 %7, i32* %9, align 1, !tbaa !11
+  %10 = getelementptr inbounds i8, i8* %4, i64 12
+  %11 = bitcast i8* %10 to i32*
+  store i32 2, i32* %11, align 1, !tbaa !11
+  %12 = getelementptr inbounds i8, i8* %4, i64 16
+  %13 = bitcast i8* %12 to %struct.object**
+  store %struct.object* %1, %struct.object** %13, align 1, !tbaa !12
+  %14 = getelementptr inbounds i8, i8* %4, i64 24
+  %15 = bitcast i8* %14 to %struct.object**
+  store %struct.object* %2, %struct.object** %15, align 1, !tbaa !12
+  ret %struct.tagged* %5
+}
+
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tagged* @make_tagged_3(i64 noundef %0, %struct.object* noundef %1, %struct.object* noundef %2, %struct.object* noundef %3) local_unnamed_addr #4 {
+  %5 = tail call noalias i8* @GC_malloc(i64 noundef 40) #9
+  %6 = bitcast i8* %5 to %struct.tagged*
+  %7 = getelementptr inbounds i8, i8* %5, i64 4
+  store i8 2, i8* %7, align 1, !tbaa !5
+  %8 = trunc i64 %0 to i32
+  %9 = getelementptr inbounds i8, i8* %5, i64 8
+  %10 = bitcast i8* %9 to i32*
+  store i32 %8, i32* %10, align 1, !tbaa !11
+  %11 = getelementptr inbounds i8, i8* %5, i64 12
+  %12 = bitcast i8* %11 to i32*
+  store i32 3, i32* %12, align 1, !tbaa !11
+  %13 = getelementptr inbounds i8, i8* %5, i64 16
+  %14 = bitcast i8* %13 to %struct.object**
+  store %struct.object* %1, %struct.object** %14, align 1, !tbaa !12
+  %15 = getelementptr inbounds i8, i8* %5, i64 24
+  %16 = bitcast i8* %15 to %struct.object**
+  store %struct.object* %2, %struct.object** %16, align 1, !tbaa !12
+  %17 = getelementptr inbounds i8, i8* %5, i64 32
+  %18 = bitcast i8* %17 to %struct.object**
+  store %struct.object* %3, %struct.object** %18, align 1, !tbaa !12
+  ret %struct.tagged* %6
+}
+
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.tagged* @make_tagged_4(i64 noundef %0, %struct.object* noundef %1, %struct.object* noundef %2, %struct.object* noundef %3, %struct.object* noundef %4) local_unnamed_addr #4 {
+  %6 = tail call noalias i8* @GC_malloc(i64 noundef 48) #9
+  %7 = bitcast i8* %6 to %struct.tagged*
+  %8 = getelementptr inbounds i8, i8* %6, i64 4
+  store i8 2, i8* %8, align 1, !tbaa !5
+  %9 = trunc i64 %0 to i32
+  %10 = getelementptr inbounds i8, i8* %6, i64 8
+  %11 = bitcast i8* %10 to i32*
+  store i32 %9, i32* %11, align 1, !tbaa !11
+  %12 = getelementptr inbounds i8, i8* %6, i64 12
+  %13 = bitcast i8* %12 to i32*
+  store i32 4, i32* %13, align 1, !tbaa !11
+  %14 = getelementptr inbounds i8, i8* %6, i64 16
+  %15 = bitcast i8* %14 to %struct.object**
+  store %struct.object* %1, %struct.object** %15, align 1, !tbaa !12
+  %16 = getelementptr inbounds i8, i8* %6, i64 24
+  %17 = bitcast i8* %16 to %struct.object**
+  store %struct.object* %2, %struct.object** %17, align 1, !tbaa !12
+  %18 = getelementptr inbounds i8, i8* %6, i64 32
+  %19 = bitcast i8* %18 to %struct.object**
+  store %struct.object* %3, %struct.object** %19, align 1, !tbaa !12
+  %20 = getelementptr inbounds i8, i8* %6, i64 40
+  %21 = bitcast i8* %20 to %struct.object**
+  store %struct.object* %4, %struct.object** %21, align 1, !tbaa !12
+  ret %struct.tagged* %7
+}
+
+; Function Attrs: nounwind sspstrong uwtable
 define dso_local i8* @extract_tagged_field(%struct.tagged* nocapture noundef readonly %0, i64 noundef %1, i64 noundef %2) local_unnamed_addr #4 {
   %4 = getelementptr inbounds %struct.tagged, %struct.tagged* %0, i64 0, i32 1
   %5 = load i32, i32* %4, align 1, !tbaa !11
@@ -146,6 +335,25 @@ define dso_local i8* @extract_tagged_field(%struct.tagged* nocapture noundef rea
   ret i8* %19
 }
 
+; Function Attrs: nounwind sspstrong uwtable
+define dso_local noalias %struct.i64* @create_boxed_i64(i64 noundef %0) local_unnamed_addr #4 {
+  %2 = tail call noalias i8* @GC_malloc(i64 noundef 16) #9
+  %3 = bitcast i8* %2 to %struct.i64*
+  %4 = getelementptr inbounds i8, i8* %2, i64 4
+  store i8 6, i8* %4, align 1, !tbaa !14
+  %5 = getelementptr inbounds i8, i8* %2, i64 8
+  %6 = bitcast i8* %5 to i64*
+  store i64 %0, i64* %6, align 1, !tbaa !17
+  ret %struct.i64* %3
+}
+
+; Function Attrs: mustprogress nofree norecurse nosync nounwind readonly sspstrong uwtable willreturn
+define dso_local i64 @extract_boxed_i64(%struct.i64* nocapture noundef readonly %0) local_unnamed_addr #6 {
+  %2 = getelementptr inbounds %struct.i64, %struct.i64* %0, i64 0, i32 1
+  %3 = load i64, i64* %2, align 1, !tbaa !17
+  ret i64 %3
+}
+
 attributes #0 = { mustprogress nofree norecurse nosync nounwind readnone sspstrong uwtable willreturn "frame-pointer"="none" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #1 = { noreturn nounwind sspstrong uwtable "frame-pointer"="none" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #2 = { nofree nounwind "frame-pointer"="none" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
@@ -174,3 +382,7 @@ attributes #9 = { nounwind allocsize(0) }
 !11 = !{!7, !7, i64 0}
 !12 = !{!13, !13, i64 0}
 !13 = !{!"any pointer", !8, i64 0}
+!14 = !{!15, !8, i64 4}
+!15 = !{!"i64", !6, i64 0, !16, i64 8}
+!16 = !{!"long", !8, i64 0}
+!17 = !{!15, !16, i64 8}

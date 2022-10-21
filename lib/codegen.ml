@@ -13,47 +13,55 @@ type lty =
   | Tagged
   | Closure
   | Opaque
+  | Object
 
 exception UnsupportedType of string
+exception NotImplemented
+exception RTFunctionNotFound of string
 
-let rec cty_to_lty = function
+let rec cty_to_lty ~boxed = function
   | Types.TyUnit -> Unit
-  | TyInt -> RawI64
-  | TyFloat -> RawF64
+  | TyInt -> if boxed then BoxedI64 else RawI64
+  | TyFloat -> if boxed then BoxedF64 else RawF64
   | TyBool -> RawBool
   | TyStr -> String
-  | TyProd tys -> Tuple (List.map cty_to_lty tys)
-  | TyRecord tys -> Tuple (List.map (fun (_, ty) -> cty_to_lty ty) tys)
+  | TyProd tys -> Tuple (List.map (cty_to_lty ~boxed:true) tys)
+  | TyRecord tys ->
+      Tuple (List.map (fun (_, ty) -> cty_to_lty ~boxed:true ty) tys)
   | TyEnum _ -> Tagged
-  | TyArray ty -> Array (cty_to_lty ty)
+  | TyArray ty -> Array (cty_to_lty ~boxed:true ty)
   | TyArrow _ -> Closure
-  | TyVar { contents = Link _ } -> Opaque
+  | TyVar { contents = Link _ } -> Object
   | TyHole -> Opaque
   | _ as t -> raise @@ UnsupportedType (Types.show_ty t)
 
-let rec lty_to_llty ctx = function
+let rec lty_to_llty m =
+  let ctx = module_context m in
+  function
   | Unit -> i1_type ctx
-  | BoxedI64 -> pointer_type @@ i64_type ctx
+  | BoxedI64 -> Runtime.i64 m
   | RawI64 -> i64_type ctx
-  | BoxedF64 -> pointer_type @@ double_type ctx
+  | BoxedF64 -> raise NotImplemented
   | RawF64 -> double_type ctx
   | RawBool -> i1_type ctx
   | String -> double_type ctx
-  | Array _ -> Runtime.array ctx
-  | Tuple _ -> Runtime.tuple ctx
-  | Tagged -> Runtime.tagged ctx
-  | Closure -> Runtime.closure ctx
+  | Array _ -> Runtime.array m
+  | Tuple _ -> Runtime.tuple m
+  | Tagged -> Runtime.tagged m
+  | Closure -> Runtime.closure m
+  | Object -> pointer_type @@ Runtime.obj m
   | Opaque -> pointer_type @@ i8_type ctx
 
-let cty_to_llty ctx ty = cty_to_lty ty |> lty_to_llty ctx
-
-exception NotImplemented
+let cty_to_llty m ~boxed ty = cty_to_lty ~boxed ty |> lty_to_llty m
 
 let codegen =
   let ctx = create_context () in
   let m = create_module ctx "bite module" in
+  let buf = MemoryBuffer.of_file "./runtime/runtime.ll" in
+  let rt = Llvm_irreader.parse_ir ctx buf in
+  let _ = Llvm_linker.link_modules' m rt in
   let builder = builder ctx in
-  let conv_ty = cty_to_llty ctx in
+  let conv_ty = cty_to_llty m in
   let i1 = i1_type ctx in
   let i64 = i64_type ctx in
   let f64 = double_type ctx in
@@ -61,7 +69,8 @@ let codegen =
   let make_allocas symtbl vars =
     List.iter
       (fun Cir.{ vid; vty; _ } ->
-        Hashtbl.add symtbl vid @@ build_alloca (conv_ty vty) "" builder)
+        Hashtbl.add symtbl vid
+        @@ build_alloca (conv_ty vty ~boxed:false) "" builder)
       vars
   in
 
@@ -94,8 +103,8 @@ let codegen =
   and define_1 Cir.{ fname; hvars; params; rvar; _ } =
     let Cir.{ vty; _ } = Option.get rvar in
     let fty =
-      function_type (conv_ty vty)
-      @@ Array.map (fun Cir.{ vty; _ } -> conv_ty vty)
+      function_type (conv_ty vty ~boxed:false)
+      @@ Array.map (fun Cir.{ vty; _ } -> conv_ty vty ~boxed:false)
       @@ Array.of_list @@ List.append hvars params
     in
     ignore @@ define_function fname fty m
@@ -114,98 +123,171 @@ let codegen =
     assign_args_to_locals symtbl (List.append hvars params) f builder;
 
     let bbtbl = append_blocks ctx f blocks in
-
+    let lookup_runtime_function name =
+      match Llvm.lookup_function name m with
+      | Some f -> f
+      | None -> raise @@ RTFunctionNotFound name
+    in
     let rec emit_value bd = function
-      | `Imm i | `ILit i -> const_int i64 i
-      | `BLit b -> const_int i64 (if b then 1 else 0)
+      | `Imm i | `ILit i -> (RawI64, const_int i64 i)
+      | `BLit b -> (RawI64, const_int i64 (if b then 1 else 0))
       | `SLit _ -> raise NotImplemented
-      | `FLit f -> const_float f64 f
+      | `FLit f -> (RawF64, const_float f64 f)
       | `Var v -> emit_variable bd v
       | `Insn insn -> emit_insn m bd insn
-      | `Unit -> const_int i1 0
-    and emit_variable bd Cir.{ vid; _ } =
-      build_load (Hashtbl.find symtbl vid) "" bd
+      | `Unit -> (Unit, const_int i1 0)
+    and emit_boxed_value bd v =
+      match emit_value bd v with
+      | RawI64, v ->
+          let r =
+            build_call
+              (lookup_runtime_function "create_boxed_i64")
+              [| v |] "" bd
+          in
+          (BoxedI64, r)
+      | RawF64, _ -> raise NotImplemented
+      | _ as tv -> tv
+    and emit_erased_value bd = function
+      | RawI64, _ -> raise NotImplemented
+      | RawF64, _ -> raise NotImplemented
+      | t, v -> (t, build_pointercast v (lty_to_llty m Object) "" bd)
+    and emit_variable bd Cir.{ vid; vty; _ } =
+      (cty_to_lty ~boxed:false vty, build_load (Hashtbl.find symtbl vid) "" bd)
     and emit_insn m bd = function
-      | Cir.Call ({ fname; _ }, args) ->
-          build_call
-            (lookup_function fname m |> Option.get)
-            (Array.map (fun value -> emit_value bd value) @@ Array.of_list args)
-            "" bd
-      | Cir.BinaryOp (op, l, r) -> (
-          let l = emit_value bd l in
-          let r = emit_value bd r in
+      | Cir.Call ({ fname; rvar; _ }, args) ->
+          let Cir.{ vty; _ } = Option.get rvar in
+          let r =
+            build_call
+              (lookup_function fname m |> Option.get)
+              (Array.map (fun value ->
+                   let _, v = emit_value bd value in
+                   v)
+              @@ Array.of_list args)
+              "" bd
+          in
+          (cty_to_lty ~boxed:false vty, r)
+      | Cir.BinaryOp (op, l, r) ->
+          let t1, l = emit_value bd l in
+          let t2, r = emit_value bd r in
+          let t =
+            match (t1, t2) with
+            | RawF64, RawF64 -> RawF64
+            | RawI64, RawI64 -> RawI64
+            | _ -> raise NotImplemented
+          in
           let choose ll rr =
             match (classify_type @@ type_of l, classify_type @@ type_of r) with
             | Integer, Integer -> ll ()
             | Double, Double -> rr ()
             | _ -> raise NotImplemented
           in
-          match op with
-          | Add ->
-              choose
-                (fun _ -> build_add l r "" bd)
-                (fun _ -> build_fadd l r "" bd)
-          | Sub ->
-              choose
-                (fun _ -> build_sub l r "" bd)
-                (fun _ -> build_fsub l r "" bd)
-          | Mul ->
-              choose
-                (fun _ -> build_mul l r "" bd)
-                (fun _ -> build_fmul l r "" bd)
-          | Div ->
-              choose
-                (fun _ -> build_sdiv l r "" bd)
-                (fun _ -> build_fdiv l r "" bd)
-          | Mod ->
-              choose
-                (fun _ -> build_srem l r "" bd)
-                (fun _ -> build_frem l r "" bd)
-          | Eq ->
-              choose
-                (fun _ -> build_icmp Icmp.Eq l r "" bd)
-                (fun _ -> build_fcmp Fcmp.Oeq l r "" bd)
-          | Neq ->
-              choose
-                (fun _ -> build_icmp Icmp.Ne l r "" bd)
-                (fun _ -> build_fcmp Fcmp.One l r "" bd)
-          | Gt ->
-              choose
-                (fun _ -> build_icmp Icmp.Sgt l r "" bd)
-                (fun _ -> build_fcmp Fcmp.Ogt l r "" bd)
-          | Ge ->
-              choose
-                (fun _ -> build_icmp Icmp.Sge l r "" bd)
-                (fun _ -> build_fcmp Fcmp.Oge l r "" bd)
-          | Lt ->
-              choose
-                (fun _ -> build_icmp Icmp.Slt l r "" bd)
-                (fun _ -> build_fcmp Fcmp.Olt l r "" bd)
-          | Le ->
-              choose
-                (fun _ -> build_icmp Icmp.Sle l r "" bd)
-                (fun _ -> build_fcmp Fcmp.Ole l r "" bd)
-          | LAnd | LOr -> raise NotImplemented)
-      | Cir.UnaryOp (op, v) -> (
-          let v = emit_value bd v in
-          match op with
-          | LNot -> (
-              match classify_type @@ type_of v with
-              | Integer -> build_icmp Icmp.Eq (const_int (type_of v) 0) v "" bd
-              | Double ->
-                  build_fcmp Fcmp.Oeq (const_float (type_of v) 0.) v "" bd
-              | _ -> raise NotImplemented)
-          | Plus -> v
-          | Minus -> (
-              match classify_type @@ type_of v with
-              | Integer -> build_neg v "" bd
-              | Double -> build_fneg v "" bd
-              | _ -> raise NotImplemented))
-      | Cir.MakeTuple fields -> raise NotImplemented
-      | Cir.MakeTaggedTuple (n, fields) -> raise NotImplemented
+          let v =
+            match op with
+            | Add ->
+                choose
+                  (fun _ -> build_add l r "" bd)
+                  (fun _ -> build_fadd l r "" bd)
+            | Sub ->
+                choose
+                  (fun _ -> build_sub l r "" bd)
+                  (fun _ -> build_fsub l r "" bd)
+            | Mul ->
+                choose
+                  (fun _ -> build_mul l r "" bd)
+                  (fun _ -> build_fmul l r "" bd)
+            | Div ->
+                choose
+                  (fun _ -> build_sdiv l r "" bd)
+                  (fun _ -> build_fdiv l r "" bd)
+            | Mod ->
+                choose
+                  (fun _ -> build_srem l r "" bd)
+                  (fun _ -> build_frem l r "" bd)
+            | Eq ->
+                choose
+                  (fun _ -> build_icmp Icmp.Eq l r "" bd)
+                  (fun _ -> build_fcmp Fcmp.Oeq l r "" bd)
+            | Neq ->
+                choose
+                  (fun _ -> build_icmp Icmp.Ne l r "" bd)
+                  (fun _ -> build_fcmp Fcmp.One l r "" bd)
+            | Gt ->
+                choose
+                  (fun _ -> build_icmp Icmp.Sgt l r "" bd)
+                  (fun _ -> build_fcmp Fcmp.Ogt l r "" bd)
+            | Ge ->
+                choose
+                  (fun _ -> build_icmp Icmp.Sge l r "" bd)
+                  (fun _ -> build_fcmp Fcmp.Oge l r "" bd)
+            | Lt ->
+                choose
+                  (fun _ -> build_icmp Icmp.Slt l r "" bd)
+                  (fun _ -> build_fcmp Fcmp.Olt l r "" bd)
+            | Le ->
+                choose
+                  (fun _ -> build_icmp Icmp.Sle l r "" bd)
+                  (fun _ -> build_fcmp Fcmp.Ole l r "" bd)
+            | LAnd | LOr -> raise NotImplemented
+          in
+          (t, v)
+      | Cir.UnaryOp (op, v) ->
+          let t, v = emit_value bd v in
+          let v =
+            match op with
+            | LNot -> (
+                match classify_type @@ type_of v with
+                | Integer ->
+                    build_icmp Icmp.Eq (const_int (type_of v) 0) v "" bd
+                | Double ->
+                    build_fcmp Fcmp.Oeq (const_float (type_of v) 0.) v "" bd
+                | _ -> raise NotImplemented)
+            | Plus -> v
+            | Minus -> (
+                match classify_type @@ type_of v with
+                | Integer -> build_neg v "" bd
+                | Double -> build_fneg v "" bd
+                | _ -> raise NotImplemented)
+          in
+          ((match op with LNot -> RawI64 | Plus -> t | Minus -> t), v)
+      | Cir.MakeTuple fields ->
+          let n = List.length fields in
+          if n > 4 then raise NotImplemented
+          else
+            let tys, vals =
+              Array.split
+              @@ Array.map (fun value ->
+                     emit_erased_value bd @@ emit_boxed_value bd value)
+              @@ Array.of_list fields
+            in
+            let r =
+              build_call
+                (lookup_runtime_function @@ "make_tuple_" ^ string_of_int n)
+                vals "" bd
+            in
+            (Tuple (Array.to_list tys), r)
+      | Cir.MakeTaggedTuple (tag, fields) ->
+          let tag = const_int (i64_type ctx) tag in
+          let n = List.length fields in
+          if n > 4 then raise NotImplemented
+          else
+            let vals =
+              Array.map (fun value ->
+                  let _, v =
+                    emit_erased_value bd @@ emit_boxed_value bd value
+                  in
+                  v)
+              @@ Array.of_list fields
+            in
+            let r =
+              build_call
+                (lookup_runtime_function @@ "make_tagged_" ^ string_of_int n)
+                (Array.append [| tag |] vals)
+                "" bd
+            in
+            (Tagged, r)
+      | Cir.ExtractTupleField (tp, n) -> raise NotImplemented
       | Cir.MakeArray elems -> raise NotImplemented
       | Cir.ExtractArrayElement (arr, n) -> raise NotImplemented
-      | Cir.ExtractTupleField (tp, n) -> raise NotImplemented
       | Cir.Intrinsic _ -> raise NotImplemented
     in
 
@@ -214,10 +296,18 @@ let codegen =
       let bd = builder_at_end ctx llblk in
       List.iter
         (fun (lhs, rhs) ->
-          let rhs = emit_value bd rhs in
+          let _, rhs = emit_value bd rhs in
           if Option.is_some lhs then
-            let Cir.{ vid; _ } = Option.get lhs in
+            let Cir.{ vid; vty; _ } = Option.get lhs in
             let lhs = Hashtbl.find symtbl vid in
+            let rhs =
+              if
+                match vty with
+                | TyVar { contents = Link _ } -> true
+                | _ -> false
+              then build_pointercast rhs (lty_to_llty m Object) "" bd
+              else rhs
+            in
             ignore @@ build_store rhs lhs bd)
         stmts
     in
@@ -232,11 +322,13 @@ let codegen =
       let Cir.{ terminator; _ } = cirblk in
       let bd = builder_at_end ctx llblk in
       match terminator with
-      | Return -> ignore @@ build_ret (emit_variable bd @@ Option.get rvar) bd
+      | Return ->
+          let _, r = emit_variable bd @@ Option.get rvar in
+          ignore @@ build_ret r bd
       | Panic -> ignore @@ build_unreachable bd
       | Jump { bid; _ } -> ignore @@ build_br (Hashtbl.find bbtbl bid) bd
       | Branch (cond, Cir.{ bid = t; _ }, Cir.{ bid = f; _ }) ->
-          let v = emit_value bd cond in
+          let _, v = emit_value bd cond in
           let cond =
             match classify_type @@ type_of v with
             | Integer -> build_icmp Icmp.Ne (const_int (type_of v) 0) v "" bd

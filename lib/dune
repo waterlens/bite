@@ -11,7 +11,7 @@
 
 (library
  (name bite)
- (libraries llvm)
+ (libraries llvm llvm.irreader llvm.linker)
  (preprocess (pps ppx_deriving.show ppx_deriving.ord))
  (modules
   lexer

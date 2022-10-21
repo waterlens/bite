@@ -3,6 +3,7 @@ type cir = { functions : cir_func list }
 
 and cir_func = {
   fname : string;
+  is_handler : bool;
   mutable blocks : cir_block list;
   mutable hvars : cir_variable list;
   mutable params : cir_variable list;
@@ -103,6 +104,7 @@ let move_to ctx blk = ctx.pos <- blk
 
 exception NotImplemented
 exception Unreachable
+exception NotInEffectHandler
 exception Error of string
 
 let ctor_or_func { ty_ctx; _ } name =
@@ -129,34 +131,49 @@ let field_or_effop { ty_ctx; _ } name =
       | Some eff -> `EffOp (name, eff)
       | None -> `Neither)
 
+let is_tail_resumptive Syntax.{ handler_stmt; _ } =
+  let last_stmt = List.hd @@ List.rev handler_stmt in
+  match last_stmt with Syntax.Ctl (Syntax.Resume _) -> true | _ -> false
+
+let maybe_abortive h = not @@ is_tail_resumptive h
+
 let rec build_expr ctx =
   let build_expr_with_cur_ctx x = build_expr ctx x in
   function
   | Syntax.BinaryExpr (op, e1, e2) ->
       `Insn (BinaryOp (op, build_expr ctx e1, build_expr ctx e2))
-  | Syntax.UnaryExpr (op, e) -> `Insn (UnaryOp (op, build_expr ctx e))
-  | Syntax.Literal (Syntax.IntLiteral x) -> `ILit x
-  | Syntax.Literal (Syntax.BoolLiteral x) -> `BLit x
-  | Syntax.Literal (Syntax.StringLiteral x) -> `SLit x
-  | Syntax.Literal (Syntax.FloatLiteral x) -> `FLit x
-  | Syntax.ArrayExpr elems ->
+  | UnaryExpr (op, e) -> `Insn (UnaryOp (op, build_expr ctx e))
+  | Literal (IntLiteral x) -> `ILit x
+  | Literal (BoolLiteral x) -> `BLit x
+  | Literal (StringLiteral x) -> `SLit x
+  | Literal (FloatLiteral x) -> `FLit x
+  | ArrayExpr elems ->
       `Insn (MakeArray (List.map build_expr_with_cur_ctx elems))
-  | Syntax.CallExpr (VarExpr name, args) ->
-      build_call_or_ctor_expr ctx name args
-  | Syntax.CallExpr (GenericExpr (e, tys), args) -> raise NotImplemented
-  | Syntax.CallExpr _ ->
+  | CallExpr (VarExpr name, args) -> build_call_or_ctor_expr ctx name args
+  | CallExpr (GenericExpr (e, tys), args) -> raise NotImplemented
+  | CallExpr _ ->
       raise NotImplemented (* Do not allow other forms of call expression *)
-  | Syntax.FieldExpr (e, field) -> (
+  | FieldExpr (e, field) -> (
       let e = build_expr_with_cur_ctx e in
       match field with
-      | Syntax.Ordinal n -> `Insn (ExtractTupleField (e, n))
+      | Ordinal n -> `Insn (ExtractTupleField (e, n))
       | _ -> raise NotImplemented)
-  | Syntax.IndexExpr (e1, e2) ->
+  | IndexExpr (e1, e2) ->
       `Insn (ExtractArrayElement (build_expr ctx e1, build_expr ctx e2))
-  | Syntax.TupleExpr fields ->
+  | TupleExpr fields ->
       `Insn (MakeTuple (List.map build_expr_with_cur_ctx fields))
   | BlockExpr stmts -> build_block_expr ctx stmts
   | VarExpr name -> build_var_or_ctor_expr ctx name
+  | GenericExpr (FieldExpr (e, field), tys) -> (
+      let e = build_expr_with_cur_ctx e in
+      match field with
+      | Named s -> (
+          match field_or_effop ctx s with
+          | `Neither ->
+              raise @@ Error (s ^ " is not an effect operation or a field")
+          | `NthField _ -> raise NotImplemented
+          | `EffOp (name, eff) -> raise NotImplemented)
+      | _ -> raise NotImplemented)
   | GenericExpr _ -> raise NotImplemented
 
 and build_call_or_ctor_expr ctx name args =
@@ -238,16 +255,44 @@ and build_ctl ctx =
 
       move_to ctx end_block;
       change_current_terminator ctx old_last
-  | Syntax.Try _ -> ()
-  | Syntax.Resume _ -> ()
+  | Syntax.Try (body, handlers) ->
+      if List.length handlers <> 1 then raise NotImplemented
+      else
+        let Syntax.
+              {
+                eff_name;
+                eff_ty_ann;
+                handler_name;
+                handler_ty_ann;
+                handler_generic_param;
+                handler_arg;
+                handler_stmt;
+              } =
+          List.hd handlers
+        in
+        ()
+  | Syntax.Resume e ->
+      let cur = Option.get ctx.func in
+      if cur.is_handler = false then raise NotInEffectHandler
+      else
+        let ret_blk = Option.get cur.ret_block in
+        let value = build_expr ctx e in
+        let func = Option.get ctx.func in
+        append_stmt ctx (Some (Option.get func.rvar)) value;
+        ignore @@ link_between ctx.pos ret_blk;
+        let dummy_block = make_block Panic "dummy" in
+        move_to ctx dummy_block
   | Syntax.Ret e ->
-      let ret_blk = Option.get (Option.get ctx.func).ret_block in
-      let value = build_expr ctx e in
-      let func = Option.get ctx.func in
-      append_stmt ctx (Some (Option.get func.rvar)) value;
-      ignore @@ link_between ctx.pos ret_blk;
-      let dummy_block = make_block Panic "dummy" in
-      move_to ctx dummy_block
+      let cur = Option.get ctx.func in
+      if cur.is_handler = true then raise NotImplemented
+      else
+        let ret_blk = Option.get (Option.get ctx.func).ret_block in
+        let value = build_expr ctx e in
+        let func = Option.get ctx.func in
+        append_stmt ctx (Some (Option.get func.rvar)) value;
+        ignore @@ link_between ctx.pos ret_blk;
+        let dummy_block = make_block Panic "dummy" in
+        move_to ctx dummy_block
 
 and build_stmt_with_output_var ctx out = function
   | Syntax.Ctl ctl -> (
@@ -279,6 +324,7 @@ let make_initial_blocks id =
 let make_cir_func_proto name =
   {
     fname = name;
+    is_handler = false;
     blocks = [];
     hvars = [];
     params = [];
@@ -289,6 +335,70 @@ let make_cir_func_proto name =
   }
 
 let build_cir_func ctx name generic_param param ty_ann body =
+  ignore @@ entry_scope ctx;
+  let proto = Scope.lookup ctx.fn_ctx name in
+  let var_id = ref 0 in
+  let blk_id = ref 0 in
+  ctx.var_id <- var_id;
+  ctx.block_id <- blk_id;
+  let rty, _ = ty_ann in
+  let rvar = make_variable var_id RetVar rty in
+  let hvars =
+    List.filter_map
+      (function
+        | Syntax.HandlerVar (name, ty) ->
+            let hvar = make_variable var_id Parameter ty in
+            Scope.insert ctx.var_ctx name hvar;
+            Some hvar
+        | GenericVar _ -> None)
+      generic_param
+  in
+  ignore @@ entry_scope ctx;
+  let params =
+    List.map
+      (fun (name, ty) ->
+        let param = make_variable var_id Parameter ty in
+        Scope.insert ctx.var_ctx name param;
+        param)
+      param
+  in
+  let entry, return = make_initial_blocks blk_id in
+  proto.blocks <- [ return; entry ];
+  proto.hvars <- hvars;
+  proto.params <- params;
+  proto.entry_block <- Some entry;
+  proto.ret_block <- Some return;
+  proto.rvar <- Some rvar;
+  ctx.pos <- entry;
+  ctx.func <- Some proto;
+  let v = build_func_body ctx body in
+  move_to ctx return;
+  append_stmt ctx None v;
+  ignore @@ leave_scope ctx;
+  ignore @@ leave_scope ctx
+
+let fresh_counter = ref 0
+
+let fresh_name name =
+  let id = !fresh_counter in
+  fresh_counter := id + 1;
+  name ^ string_of_int id
+
+let make_cir_eff_handler_proto name =
+  let name = fresh_name name in
+  {
+    fname = name;
+    is_handler = true;
+    blocks = [];
+    hvars = [];
+    params = [];
+    locals = [];
+    rvar = None;
+    entry_block = None;
+    ret_block = None;
+  }
+
+let build_cir_eff_handler ctx name generic_param param ty_ann body =
   ignore @@ entry_scope ctx;
   let proto = Scope.lookup ctx.fn_ctx name in
   let var_id = ref 0 in

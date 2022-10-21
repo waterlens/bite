@@ -20,7 +20,7 @@
 (package
  (name bite)
  (synopsis "A language for experimental purpose")
- (depends ocaml dune llvm)
+ (depends ocaml dune llvm llvm.irreader llvm.linker)
  (tags
   (lang)))
 
